@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import type { ActiveSession, LocationStats } from '@tracearr/shared';
 import { cn } from '@/lib/utils';
 
@@ -85,7 +86,7 @@ export function StreamMap({
     (locations && locations.some((l) => l.lat && l.lon));
 
   return (
-    <div className={cn('overflow-hidden rounded-lg', className)} style={{ height }}>
+    <div className={cn('relative overflow-hidden rounded-lg', className)} style={{ height }}>
       <MapContainer
         center={[20, 0]}
         zoom={2}

@@ -1,6 +1,9 @@
 import { Routes, Route } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { Layout } from '@/components/layout/Layout';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { Login } from '@/pages/Login';
+import { Setup } from '@/pages/Setup';
 import { Dashboard } from '@/pages/Dashboard';
 import { Activity } from '@/pages/Activity';
 import { Users } from '@/pages/Users';
@@ -14,7 +17,19 @@ export function App() {
   return (
     <>
       <Routes>
-        <Route path="/" element={<Layout />}>
+        {/* Public routes */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/setup" element={<Setup />} />
+
+        {/* Protected routes */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Dashboard />} />
           <Route path="activity" element={<Activity />} />
           <Route path="users" element={<Users />} />

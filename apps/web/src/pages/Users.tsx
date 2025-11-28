@@ -1,18 +1,119 @@
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DataTable } from '@/components/ui/data-table';
+import { TrustScoreBadge } from '@/components/users/TrustScoreBadge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { User as UserIcon, Crown, Clock } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import type { ColumnDef } from '@tanstack/react-table';
+import type { User } from '@tracearr/shared';
+import { useUsers } from '@/hooks/queries';
+
+const userColumns: ColumnDef<User>[] = [
+  {
+    accessorKey: 'username',
+    header: 'User',
+    cell: ({ row }) => {
+      const user = row.original;
+      return (
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+            {user.thumbUrl ? (
+              <img
+                src={user.thumbUrl}
+                alt={user.username}
+                className="h-10 w-10 rounded-full object-cover"
+              />
+            ) : (
+              <UserIcon className="h-5 w-5 text-muted-foreground" />
+            )}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{user.username}</span>
+              {user.isOwner && (
+                <span title="Server Owner">
+                  <Crown className="h-4 w-4 text-yellow-500" />
+                </span>
+              )}
+            </div>
+            {user.email && (
+              <p className="text-sm text-muted-foreground">{user.email}</p>
+            )}
+          </div>
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: 'trustScore',
+    header: 'Trust Score',
+    cell: ({ row }) => (
+      <TrustScoreBadge score={row.original.trustScore} showLabel />
+    ),
+  },
+  {
+    accessorKey: 'allowGuest',
+    header: 'Guest Access',
+    cell: ({ row }) => (
+      <span className={row.original.allowGuest ? 'text-green-500' : 'text-muted-foreground'}>
+        {row.original.allowGuest ? 'Allowed' : 'Disabled'}
+      </span>
+    ),
+  },
+  {
+    accessorKey: 'createdAt',
+    header: 'Joined',
+    cell: ({ row }) => (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Clock className="h-4 w-4" />
+        {formatDistanceToNow(new Date(row.original.createdAt), { addSuffix: true })}
+      </div>
+    ),
+  },
+];
 
 export function Users() {
+  const navigate = useNavigate();
+  const { data: users, isLoading } = useUsers();
+
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Users</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Users</h1>
+        {users && (
+          <p className="text-sm text-muted-foreground">
+            {users.length} user{users.length !== 1 ? 's' : ''} total
+          </p>
+        )}
+      </div>
 
       <Card>
         <CardHeader>
           <CardTitle>All Users</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex h-64 items-center justify-center rounded-lg border border-dashed">
-            <p className="text-muted-foreground">User list will be displayed here</p>
-          </div>
+          {isLoading ? (
+            <div className="space-y-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <DataTable
+              columns={userColumns}
+              data={users ?? []}
+              pageSize={10}
+              onRowClick={(user) => navigate(`/users/${user.id}`)}
+              emptyMessage="No users found."
+            />
+          )}
         </CardContent>
       </Card>
     </div>
