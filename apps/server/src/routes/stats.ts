@@ -1,5 +1,10 @@
 /**
  * Statistics routes - Dashboard metrics and analytics
+ *
+ * Uses TimescaleDB continuous aggregates where possible for better performance:
+ * - daily_plays_by_user: Pre-aggregated daily play counts per user
+ * - daily_plays_by_platform: Pre-aggregated daily play counts per platform
+ * - hourly_concurrent_streams: Pre-aggregated hourly stream counts per server
  */
 
 import type { FastifyPluginAsync } from 'fastify';
@@ -12,6 +17,24 @@ import {
 } from '@tracearr/shared';
 import { db } from '../db/client.js';
 import { sessions, users, violations, servers } from '../db/schema.js';
+import { getTimescaleStatus } from '../db/timescale.js';
+
+// Cache whether aggregates are available (checked once at startup)
+let aggregatesAvailable: boolean | null = null;
+
+async function hasAggregates(): Promise<boolean> {
+  if (aggregatesAvailable !== null) {
+    return aggregatesAvailable;
+  }
+  try {
+    const status = await getTimescaleStatus();
+    aggregatesAvailable = status.continuousAggregates.length >= 3;
+    return aggregatesAvailable;
+  } catch {
+    aggregatesAvailable = false;
+    return false;
+  }
+}
 
 // Helper to calculate date range based on period
 function getDateRange(period: 'day' | 'week' | 'month' | 'year'): Date {
@@ -58,29 +81,44 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
         }
       }
 
-      // Get today's plays
+      // Get today's plays and watch time
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-
-      const todayPlaysResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(sessions)
-        .where(gte(sessions.startedAt, todayStart));
-
-      const todayPlays = todayPlaysResult[0]?.count ?? 0;
-
-      // Get watch time in last 24 hours
       const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const watchTimeResult = await db
-        .select({
-          totalMs: sql<number>`coalesce(sum(duration_ms), 0)::bigint`,
-        })
-        .from(sessions)
-        .where(gte(sessions.startedAt, last24h));
 
-      const watchTimeHours = Math.round(
-        (Number(watchTimeResult[0]?.totalMs ?? 0) / (1000 * 60 * 60)) * 10
-      ) / 10;
+      let todayPlays = 0;
+      let watchTimeHours = 0;
+
+      if (await hasAggregates()) {
+        // Use continuous aggregate for better performance
+        const aggregateResult = await db.execute(sql`
+          SELECT
+            COALESCE(SUM(play_count), 0)::int as play_count,
+            COALESCE(SUM(total_duration_ms), 0)::bigint as total_duration_ms
+          FROM daily_plays_by_user
+          WHERE day >= ${todayStart}::date
+        `);
+        const row = aggregateResult.rows[0] as { play_count: number; total_duration_ms: string } | undefined;
+        todayPlays = row?.play_count ?? 0;
+        watchTimeHours = Math.round((Number(row?.total_duration_ms ?? 0) / (1000 * 60 * 60)) * 10) / 10;
+      } else {
+        // Fallback to raw sessions query
+        const todayPlaysResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(sessions)
+          .where(gte(sessions.startedAt, todayStart));
+        todayPlays = todayPlaysResult[0]?.count ?? 0;
+
+        const watchTimeResult = await db
+          .select({
+            totalMs: sql<number>`coalesce(sum(duration_ms), 0)::bigint`,
+          })
+          .from(sessions)
+          .where(gte(sessions.startedAt, last24h));
+        watchTimeHours = Math.round(
+          (Number(watchTimeResult[0]?.totalMs ?? 0) / (1000 * 60 * 60)) * 10
+        ) / 10;
+      }
 
       // Get alerts in last 24 hours
       const alertsResult = await db
@@ -119,16 +157,33 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
       const { period } = query.data;
       const startDate = getDateRange(period);
 
-      // Group by date
-      const playsByDate = await db
-        .select({
-          date: sql<string>`date_trunc('day', started_at)::date::text`,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(sessions)
-        .where(gte(sessions.startedAt, startDate))
-        .groupBy(sql`date_trunc('day', started_at)`)
-        .orderBy(sql`date_trunc('day', started_at)`);
+      let playsByDate: { date: string; count: number }[];
+
+      if (await hasAggregates()) {
+        // Use continuous aggregate - much faster for large datasets
+        const result = await db.execute(sql`
+          SELECT
+            day::date::text as date,
+            SUM(play_count)::int as count
+          FROM daily_plays_by_user
+          WHERE day >= ${startDate}
+          GROUP BY day
+          ORDER BY day
+        `);
+        playsByDate = result.rows as { date: string; count: number }[];
+      } else {
+        // Fallback to raw sessions query
+        const result = await db
+          .select({
+            date: sql<string>`date_trunc('day', started_at)::date::text`,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(sessions)
+          .where(gte(sessions.startedAt, startDate))
+          .groupBy(sql`date_trunc('day', started_at)`)
+          .orderBy(sql`date_trunc('day', started_at)`);
+        playsByDate = result;
+      }
 
       return { data: playsByDate };
     }
@@ -149,23 +204,68 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
       const { period } = query.data;
       const startDate = getDateRange(period);
 
-      // Get play count and watch time per user
-      const userStats = await db
-        .select({
-          userId: users.id,
-          username: users.username,
-          thumbUrl: users.thumbUrl,
-          playCount: sql<number>`count(${sessions.id})::int`,
-          watchTimeMs: sql<number>`coalesce(sum(${sessions.durationMs}), 0)::bigint`,
-        })
-        .from(users)
-        .leftJoin(
-          sessions,
-          and(eq(sessions.userId, users.id), gte(sessions.startedAt, startDate))
-        )
-        .groupBy(users.id, users.username, users.thumbUrl)
-        .orderBy(desc(sql`count(${sessions.id})`))
-        .limit(20);
+      let userStats: {
+        userId: string;
+        username: string;
+        thumbUrl: string | null;
+        playCount: number;
+        watchTimeMs: number;
+      }[];
+
+      if (await hasAggregates()) {
+        // Use continuous aggregate with user join
+        const result = await db.execute(sql`
+          SELECT
+            u.id as user_id,
+            u.username,
+            u.thumb_url,
+            COALESCE(SUM(a.play_count), 0)::int as play_count,
+            COALESCE(SUM(a.total_duration_ms), 0)::bigint as watch_time_ms
+          FROM users u
+          LEFT JOIN daily_plays_by_user a ON a.user_id = u.id AND a.day >= ${startDate}
+          GROUP BY u.id, u.username, u.thumb_url
+          ORDER BY play_count DESC
+          LIMIT 20
+        `);
+        userStats = (result.rows as {
+          user_id: string;
+          username: string;
+          thumb_url: string | null;
+          play_count: number;
+          watch_time_ms: string;
+        }[]).map((r) => ({
+          userId: r.user_id,
+          username: r.username,
+          thumbUrl: r.thumb_url,
+          playCount: r.play_count,
+          watchTimeMs: Number(r.watch_time_ms),
+        }));
+      } else {
+        // Fallback to raw sessions query
+        const result = await db
+          .select({
+            userId: users.id,
+            username: users.username,
+            thumbUrl: users.thumbUrl,
+            playCount: sql<number>`count(${sessions.id})::int`,
+            watchTimeMs: sql<number>`coalesce(sum(${sessions.durationMs}), 0)::bigint`,
+          })
+          .from(users)
+          .leftJoin(
+            sessions,
+            and(eq(sessions.userId, users.id), gte(sessions.startedAt, startDate))
+          )
+          .groupBy(users.id, users.username, users.thumbUrl)
+          .orderBy(desc(sql`count(${sessions.id})`))
+          .limit(20);
+        userStats = result.map((r) => ({
+          userId: r.userId,
+          username: r.username,
+          thumbUrl: r.thumbUrl,
+          playCount: r.playCount,
+          watchTimeMs: Number(r.watchTimeMs),
+        }));
+      }
 
       return {
         data: userStats.map((u) => ({
@@ -173,7 +273,7 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
           username: u.username,
           thumbUrl: u.thumbUrl,
           playCount: u.playCount,
-          watchTimeHours: Math.round((Number(u.watchTimeMs) / (1000 * 60 * 60)) * 10) / 10,
+          watchTimeHours: Math.round((u.watchTimeMs / (1000 * 60 * 60)) * 10) / 10,
         })),
       };
     }
@@ -194,15 +294,32 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
       const { period } = query.data;
       const startDate = getDateRange(period);
 
-      const platformStats = await db
-        .select({
-          platform: sessions.platform,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(sessions)
-        .where(gte(sessions.startedAt, startDate))
-        .groupBy(sessions.platform)
-        .orderBy(desc(sql`count(*)`));
+      let platformStats: { platform: string | null; count: number }[];
+
+      if (await hasAggregates()) {
+        // Use continuous aggregate
+        const result = await db.execute(sql`
+          SELECT
+            platform,
+            SUM(play_count)::int as count
+          FROM daily_plays_by_platform
+          WHERE day >= ${startDate}
+          GROUP BY platform
+          ORDER BY count DESC
+        `);
+        platformStats = result.rows as { platform: string | null; count: number }[];
+      } else {
+        // Fallback to raw sessions query
+        platformStats = await db
+          .select({
+            platform: sessions.platform,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(sessions)
+          .where(gte(sessions.startedAt, startDate))
+          .groupBy(sessions.platform)
+          .orderBy(desc(sql`count(*)`));
+      }
 
       return { data: platformStats };
     }
@@ -362,23 +479,74 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
       const { period } = query.data;
       const startDate = getDateRange(period);
 
-      const topUsers = await db
-        .select({
-          userId: users.id,
-          username: users.username,
-          thumbUrl: users.thumbUrl,
-          trustScore: users.trustScore,
-          playCount: sql<number>`count(${sessions.id})::int`,
-          watchTimeMs: sql<number>`coalesce(sum(${sessions.durationMs}), 0)::bigint`,
-        })
-        .from(users)
-        .leftJoin(
-          sessions,
-          and(eq(sessions.userId, users.id), gte(sessions.startedAt, startDate))
-        )
-        .groupBy(users.id, users.username, users.thumbUrl, users.trustScore)
-        .orderBy(desc(sql`coalesce(sum(${sessions.durationMs}), 0)`))
-        .limit(10);
+      let topUsers: {
+        userId: string;
+        username: string;
+        thumbUrl: string | null;
+        trustScore: number;
+        playCount: number;
+        watchTimeMs: number;
+      }[];
+
+      if (await hasAggregates()) {
+        // Use continuous aggregate with user join
+        const result = await db.execute(sql`
+          SELECT
+            u.id as user_id,
+            u.username,
+            u.thumb_url,
+            u.trust_score,
+            COALESCE(SUM(a.play_count), 0)::int as play_count,
+            COALESCE(SUM(a.total_duration_ms), 0)::bigint as watch_time_ms
+          FROM users u
+          LEFT JOIN daily_plays_by_user a ON a.user_id = u.id AND a.day >= ${startDate}
+          GROUP BY u.id, u.username, u.thumb_url, u.trust_score
+          ORDER BY watch_time_ms DESC
+          LIMIT 10
+        `);
+        topUsers = (result.rows as {
+          user_id: string;
+          username: string;
+          thumb_url: string | null;
+          trust_score: number;
+          play_count: number;
+          watch_time_ms: string;
+        }[]).map((r) => ({
+          userId: r.user_id,
+          username: r.username,
+          thumbUrl: r.thumb_url,
+          trustScore: r.trust_score,
+          playCount: r.play_count,
+          watchTimeMs: Number(r.watch_time_ms),
+        }));
+      } else {
+        // Fallback to raw sessions query
+        const result = await db
+          .select({
+            userId: users.id,
+            username: users.username,
+            thumbUrl: users.thumbUrl,
+            trustScore: users.trustScore,
+            playCount: sql<number>`count(${sessions.id})::int`,
+            watchTimeMs: sql<number>`coalesce(sum(${sessions.durationMs}), 0)::bigint`,
+          })
+          .from(users)
+          .leftJoin(
+            sessions,
+            and(eq(sessions.userId, users.id), gte(sessions.startedAt, startDate))
+          )
+          .groupBy(users.id, users.username, users.thumbUrl, users.trustScore)
+          .orderBy(desc(sql`coalesce(sum(${sessions.durationMs}), 0)`))
+          .limit(10);
+        topUsers = result.map((r) => ({
+          userId: r.userId,
+          username: r.username,
+          thumbUrl: r.thumbUrl,
+          trustScore: r.trustScore,
+          playCount: r.playCount,
+          watchTimeMs: Number(r.watchTimeMs),
+        }));
+      }
 
       return {
         data: topUsers.map((u) => ({
@@ -387,7 +555,7 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
           thumbUrl: u.thumbUrl,
           trustScore: u.trustScore,
           playCount: u.playCount,
-          watchTimeHours: Math.round((Number(u.watchTimeMs) / (1000 * 60 * 60)) * 10) / 10,
+          watchTimeHours: Math.round((u.watchTimeMs / (1000 * 60 * 60)) * 10) / 10,
         })),
       };
     }
@@ -408,17 +576,37 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
       const { period } = query.data;
       const startDate = getDateRange(period);
 
-      // Get hourly max concurrent streams
-      // This is simplified - a production version would use time-range overlaps
-      const hourlyData = await db
-        .select({
-          hour: sql<string>`date_trunc('hour', started_at)::text`,
-          maxConcurrent: sql<number>`count(*)::int`,
-        })
-        .from(sessions)
-        .where(gte(sessions.startedAt, startDate))
-        .groupBy(sql`date_trunc('hour', started_at)`)
-        .orderBy(sql`date_trunc('hour', started_at)`);
+      let hourlyData: { hour: string; maxConcurrent: number }[];
+
+      if (await hasAggregates()) {
+        // Use continuous aggregate - sums across servers
+        const result = await db.execute(sql`
+          SELECT
+            hour::text,
+            SUM(stream_count)::int as max_concurrent
+          FROM hourly_concurrent_streams
+          WHERE hour >= ${startDate}
+          GROUP BY hour
+          ORDER BY hour
+        `);
+        hourlyData = (result.rows as { hour: string; max_concurrent: number }[]).map((r) => ({
+          hour: r.hour,
+          maxConcurrent: r.max_concurrent,
+        }));
+      } else {
+        // Fallback to raw sessions query
+        // This is simplified - a production version would use time-range overlaps
+        const result = await db
+          .select({
+            hour: sql<string>`date_trunc('hour', started_at)::text`,
+            maxConcurrent: sql<number>`count(*)::int`,
+          })
+          .from(sessions)
+          .where(gte(sessions.startedAt, startDate))
+          .groupBy(sql`date_trunc('hour', started_at)`)
+          .orderBy(sql`date_trunc('hour', started_at)`);
+        hourlyData = result;
+      }
 
       return { data: hourlyData };
     }
