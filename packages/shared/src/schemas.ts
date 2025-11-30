@@ -134,6 +134,14 @@ export const statsQuerySchema = z.object({
   serverId: uuidSchema.optional(),
 });
 
+// Location stats with full filtering
+export const locationStatsQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).default(30),
+  userId: uuidSchema.optional(),
+  serverId: uuidSchema.optional(),
+  mediaType: z.enum(['movie', 'episode', 'track']).optional(),
+});
+
 // Settings schemas
 export const updateSettingsSchema = z.object({
   allowGuestAccess: z.boolean().optional(),
@@ -166,5 +174,6 @@ export type CreateRuleInput = z.infer<typeof createRuleSchema>;
 export type UpdateRuleInput = z.infer<typeof updateRuleSchema>;
 export type ViolationQueryInput = z.infer<typeof violationQuerySchema>;
 export type StatsQueryInput = z.infer<typeof statsQuerySchema>;
+export type LocationStatsQueryInput = z.infer<typeof locationStatsQuerySchema>;
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 export type TautulliImportInput = z.infer<typeof tautulliImportSchema>;

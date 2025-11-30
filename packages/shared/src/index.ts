@@ -37,6 +37,8 @@ export type {
   PlayStats,
   UserStats,
   LocationStats,
+  LocationStatsSummary,
+  LocationStatsResponse,
   LibraryStats,
   // Settings
   Settings,
@@ -83,6 +85,7 @@ export {
   violationIdParamSchema,
   // Stats
   statsQuerySchema,
+  locationStatsQuerySchema,
   // Settings
   updateSettingsSchema,
   // Tautulli import
@@ -100,6 +103,7 @@ export type {
   UpdateRuleInput,
   ViolationQueryInput,
   StatsQueryInput,
+  LocationStatsQueryInput,
   UpdateSettingsInput,
   TautulliImportInput,
 } from './schemas.js';

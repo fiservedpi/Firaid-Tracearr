@@ -191,11 +191,23 @@ export interface UserStats {
 }
 
 export interface LocationStats {
-  city: string;
-  country: string;
+  city: string | null;
+  country: string | null;
   lat: number;
   lon: number;
   count: number;
+  lastActivity?: Date;
+}
+
+export interface LocationStatsSummary {
+  totalStreams: number;
+  uniqueLocations: number;
+  topCity: string | null;
+}
+
+export interface LocationStatsResponse {
+  data: LocationStats[];
+  summary: LocationStatsSummary;
 }
 
 export interface LibraryStats {
