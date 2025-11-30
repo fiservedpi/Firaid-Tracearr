@@ -10,8 +10,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AuthUser } from '@tracearr/shared';
 import { api, tokenStorage } from '@/lib/api';
 
+interface UserProfile extends AuthUser {
+  email: string | null;
+  thumbUrl: string | null;
+  trustScore: number;
+  hasPassword?: boolean;
+  hasPlexLinked?: boolean;
+}
+
 interface AuthContextValue {
-  user: AuthUser | null;
+  user: UserProfile | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   logout: () => Promise<void>;
@@ -36,13 +44,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       try {
         const user = await api.auth.me();
-        // The /auth/me endpoint returns the right shape
+        // Return full user profile including thumbUrl
         return {
-          userId: user.userId ?? user.id,
+          userId: user.userId ?? user.id ?? '',
           username: user.username,
           role: user.role ?? (user.isOwner ? 'owner' : 'guest'),
-          serverIds: user.serverIds ?? [user.serverId],
-        } as AuthUser;
+          serverIds: user.serverIds ?? (user.serverId ? [user.serverId] : []),
+          email: user.email ?? null,
+          thumbUrl: user.thumbUrl ?? null,
+          trustScore: user.trustScore ?? 100,
+          hasPassword: user.hasPassword,
+          hasPlexLinked: user.hasPlexLinked,
+        } as UserProfile;
       } catch {
         // Token invalid, clear it
         tokenStorage.clearTokens();
@@ -57,11 +70,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mutationFn: async () => {
       try {
         await api.auth.logout();
+      } catch {
+        // Ignore API errors - we're logging out anyway
       } finally {
         tokenStorage.clearTokens();
       }
     },
-    onSuccess: () => {
+    onSettled: () => {
+      // Always redirect, whether success or failure
       queryClient.setQueryData(['auth', 'me'], null);
       queryClient.clear();
       window.location.href = '/login';

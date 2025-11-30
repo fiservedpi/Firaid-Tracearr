@@ -102,7 +102,11 @@ class ApiClient {
 
   // Setup - check if Tracearr needs initial configuration
   setup = {
-    status: () => this.request<{ hasServers: boolean; needsSetup: boolean }>('/setup/status'),
+    status: () => this.request<{
+      needsSetup: boolean;
+      hasServers: boolean;
+      hasPasswordAuth: boolean;
+    }>('/setup/status'),
   };
 
   // Auth
@@ -115,12 +119,28 @@ class ApiClient {
       role: 'owner' | 'guest';
       trustScore: number;
       serverIds: string[];
+      hasPassword?: boolean;
+      hasPlexLinked?: boolean;
       // Fallback fields from User type
       id?: string;
       serverId?: string;
       isOwner?: boolean;
     }>('/auth/me'),
     logout: () => this.request<void>('/auth/logout', { method: 'POST' }),
+
+    // Local account signup
+    signup: (data: { username: string; password: string; email?: string }) =>
+      this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    // Local account login
+    loginLocal: (data: { username: string; password: string }) =>
+      this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'local', ...data }),
+      }),
 
     // Plex OAuth - Step 1: Get PIN
     loginPlex: () =>
@@ -143,8 +163,8 @@ class ApiClient {
         body: JSON.stringify(data),
       }),
 
-    // Jellyfin direct auth
-    loginJellyfin: (data: {
+    // Jellyfin server connection (requires auth)
+    connectJellyfin: (data: {
       serverUrl: string;
       serverName: string;
       username: string;
@@ -154,9 +174,9 @@ class ApiClient {
         accessToken: string;
         refreshToken: string;
         user: User;
-      }>('/auth/login', {
+      }>('/auth/jellyfin/connect', {
         method: 'POST',
-        body: JSON.stringify({ type: 'jellyfin', ...data }),
+        body: JSON.stringify(data),
       }),
 
     // Legacy callback (deprecated, kept for compatibility)
@@ -294,6 +314,67 @@ class ApiClient {
       if (params?.mediaType) searchParams.set('mediaType', params.mediaType);
       const query = searchParams.toString();
       return this.request<LocationStatsResponse>(`/stats/locations${query ? `?${query}` : ''}`);
+    },
+    playsByDayOfWeek: async (period?: string) => {
+      const response = await this.request<{ data: { day: number; name: string; count: number }[] }>(
+        `/stats/plays-by-dayofweek?period=${period ?? 'month'}`
+      );
+      return response.data;
+    },
+    playsByHourOfDay: async (period?: string) => {
+      const response = await this.request<{ data: { hour: number; count: number }[] }>(
+        `/stats/plays-by-hourofday?period=${period ?? 'month'}`
+      );
+      return response.data;
+    },
+    platforms: async (period?: string) => {
+      const response = await this.request<{ data: { platform: string | null; count: number }[] }>(
+        `/stats/platforms?period=${period ?? 'month'}`
+      );
+      return response.data;
+    },
+    quality: async (period?: string) => {
+      return this.request<{
+        directPlay: number;
+        transcode: number;
+        total: number;
+        directPlayPercent: number;
+        transcodePercent: number;
+      }>(`/stats/quality?period=${period ?? 'month'}`);
+    },
+    topUsers: async (period?: string) => {
+      const response = await this.request<{ data: {
+        userId: string;
+        username: string;
+        thumbUrl: string | null;
+        serverId: string | null;
+        trustScore: number;
+        playCount: number;
+        watchTimeHours: number;
+        topMediaType: string | null;
+        topContent: string | null;
+      }[] }>(`/stats/top-users?period=${period ?? 'month'}`);
+      return response.data;
+    },
+    topContent: async (period?: string) => {
+      const response = await this.request<{ data: {
+        title: string;
+        type: string;
+        showTitle: string | null;
+        year: number | null;
+        playCount: number;
+        watchTimeHours: number;
+        thumbPath: string | null;
+        serverId: string | null;
+        ratingKey: string | null;
+      }[] }>(`/stats/top-content?period=${period ?? 'month'}`);
+      return response.data;
+    },
+    concurrent: async (period?: string) => {
+      const response = await this.request<{ data: { hour: string; maxConcurrent: number }[] }>(
+        `/stats/concurrent?period=${period ?? 'month'}`
+      );
+      return response.data;
     },
   };
 
