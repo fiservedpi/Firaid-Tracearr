@@ -50,8 +50,15 @@ export function createMockSession(overrides: Partial<Session> = {}): Session {
     durationMs: null,
     totalDurationMs: 7200000,
     progressMs: 0,
+    // Pause tracking
+    lastPausedAt: null,
+    pausedDurationMs: 0,
+    referenceId: null,
+    watched: false,
+    // Network/device info
     ipAddress: '192.168.1.1',
     geoCity: 'New York',
+    geoRegion: 'New York',
     geoCountry: 'US',
     geoLat: 40.7128,
     geoLon: -74.006,
@@ -198,14 +205,14 @@ export function createGeoRestrictionParams(
  * Geographic coordinates for common test locations
  */
 export const TEST_LOCATIONS = {
-  newYork: { lat: 40.7128, lon: -74.006, city: 'New York', country: 'US' },
-  losAngeles: { lat: 34.0522, lon: -118.2437, city: 'Los Angeles', country: 'US' },
-  london: { lat: 51.5074, lon: -0.1278, city: 'London', country: 'GB' },
-  tokyo: { lat: 35.6762, lon: 139.6503, city: 'Tokyo', country: 'JP' },
-  sydney: { lat: -33.8688, lon: 151.2093, city: 'Sydney', country: 'AU' },
-  paris: { lat: 48.8566, lon: 2.3522, city: 'Paris', country: 'FR' },
-  berlin: { lat: 52.52, lon: 13.405, city: 'Berlin', country: 'DE' },
-  moscow: { lat: 55.7558, lon: 37.6173, city: 'Moscow', country: 'RU' },
+  newYork: { lat: 40.7128, lon: -74.006, city: 'New York', region: 'New York', country: 'US' },
+  losAngeles: { lat: 34.0522, lon: -118.2437, city: 'Los Angeles', region: 'California', country: 'US' },
+  london: { lat: 51.5074, lon: -0.1278, city: 'London', region: 'England', country: 'GB' },
+  tokyo: { lat: 35.6762, lon: 139.6503, city: 'Tokyo', region: 'Tokyo', country: 'JP' },
+  sydney: { lat: -33.8688, lon: 151.2093, city: 'Sydney', region: 'New South Wales', country: 'AU' },
+  paris: { lat: 48.8566, lon: 2.3522, city: 'Paris', region: 'Île-de-France', country: 'FR' },
+  berlin: { lat: 52.52, lon: 13.405, city: 'Berlin', region: 'Berlin', country: 'DE' },
+  moscow: { lat: 55.7558, lon: 37.6173, city: 'Moscow', region: 'Moscow', country: 'RU' },
 } as const;
 
 /**

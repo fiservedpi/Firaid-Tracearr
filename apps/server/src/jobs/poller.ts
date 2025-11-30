@@ -259,8 +259,15 @@ async function getRecentUserSessions(userId: string, hours = 24): Promise<Sessio
     durationMs: s.durationMs,
     totalDurationMs: s.totalDurationMs,
     progressMs: s.progressMs,
+    // Pause tracking
+    lastPausedAt: s.lastPausedAt,
+    pausedDurationMs: s.pausedDurationMs,
+    referenceId: s.referenceId,
+    watched: s.watched,
+    // Network/device info
     ipAddress: s.ipAddress,
     geoCity: s.geoCity,
+    geoRegion: s.geoRegion,
     geoCountry: s.geoCountry,
     geoLat: s.geoLat,
     geoLon: s.geoLon,
@@ -422,7 +429,36 @@ async function processServerSessions(
       const userDetail = userDetails[0] ?? { id: userId, username: 'Unknown', thumbUrl: null };
 
       if (isNew) {
-        // Insert new session
+        // Check for session grouping - find recent unfinished session with same user+ratingKey
+        let referenceId: string | null = null;
+        if (processed.ratingKey) {
+          const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const recentSameContent = await db
+            .select()
+            .from(sessions)
+            .where(
+              and(
+                eq(sessions.userId, userId),
+                eq(sessions.ratingKey, processed.ratingKey),
+                gte(sessions.stoppedAt, oneDayAgo),
+                eq(sessions.watched, false) // Not fully watched
+              )
+            )
+            .orderBy(desc(sessions.stoppedAt))
+            .limit(1);
+
+          const previousSession = recentSameContent[0];
+          // If user is resuming (progress >= previous), link to the original session
+          if (previousSession && processed.progressMs !== undefined) {
+            const prevProgress = previousSession.progressMs || 0;
+            if (processed.progressMs >= prevProgress) {
+              // This is a "resume" - link to the first session in the chain
+              referenceId = previousSession.referenceId || previousSession.id;
+            }
+          }
+        }
+
+        // Insert new session with pause tracking fields
         const insertedRows = await db
           .insert(sessions)
           .values({
@@ -442,8 +478,16 @@ async function processServerSessions(
             startedAt: new Date(),
             totalDurationMs: processed.totalDurationMs || null,
             progressMs: processed.progressMs || null,
+            // Pause tracking - initialize based on starting state
+            lastPausedAt: processed.state === 'paused' ? new Date() : null,
+            pausedDurationMs: 0,
+            // Session grouping
+            referenceId,
+            watched: false,
+            // Network/device info
             ipAddress: processed.ipAddress,
             geoCity: geo.city,
+            geoRegion: geo.region,
             geoCountry: geo.country,
             geoLat: geo.lat,
             geoLon: geo.lon,
@@ -485,8 +529,15 @@ async function processServerSessions(
           durationMs: null,
           totalDurationMs: processed.totalDurationMs || null,
           progressMs: processed.progressMs || null,
+          // Pause tracking
+          lastPausedAt: inserted.lastPausedAt,
+          pausedDurationMs: inserted.pausedDurationMs,
+          referenceId: inserted.referenceId,
+          watched: inserted.watched,
+          // Network/device info
           ipAddress: processed.ipAddress,
           geoCity: geo.city,
+          geoRegion: geo.region,
           geoCountry: geo.country,
           geoLat: geo.lat,
           geoLon: geo.lon,
@@ -524,20 +575,7 @@ async function processServerSessions(
           }
         }
       } else {
-        // Update existing session (state changes and progress)
-        await db
-          .update(sessions)
-          .set({
-            state: processed.state,
-            quality: processed.quality,
-            bitrate: processed.bitrate,
-            progressMs: processed.progressMs || null,
-          })
-          .where(
-            and(eq(sessions.serverId, server.id), eq(sessions.sessionKey, processed.sessionKey))
-          );
-
-        // Get the session ID for cache update
+        // Get existing session to check for state changes
         const existingRows = await db
           .select()
           .from(sessions)
@@ -547,46 +585,101 @@ async function processServerSessions(
           .limit(1);
 
         const existingSession = existingRows[0];
-        if (existingSession) {
-          const activeSession: ActiveSession = {
-            id: existingSession.id,
-            serverId: server.id,
-            userId,
-            sessionKey: processed.sessionKey,
-            state: processed.state,
-            mediaType: processed.mediaType,
-            mediaTitle: processed.mediaTitle,
-            // Enhanced media metadata
-            grandparentTitle: processed.grandparentTitle || null,
-            seasonNumber: processed.seasonNumber || null,
-            episodeNumber: processed.episodeNumber || null,
-            year: processed.year || null,
-            thumbPath: processed.thumbPath || null,
-            ratingKey: processed.ratingKey || null,
-            externalSessionId: existingSession.externalSessionId,
-            startedAt: existingSession.startedAt,
-            stoppedAt: null,
-            durationMs: null,
-            totalDurationMs: processed.totalDurationMs || null,
-            progressMs: processed.progressMs || null,
-            ipAddress: processed.ipAddress,
-            geoCity: geo.city,
-            geoCountry: geo.country,
-            geoLat: geo.lat,
-            geoLon: geo.lon,
-            playerName: processed.playerName,
-            deviceId: processed.deviceId || null,
-            product: processed.product || null,
-            device: processed.device || null,
-            platform: processed.platform,
-            quality: processed.quality,
-            isTranscode: processed.isTranscode,
-            bitrate: processed.bitrate,
-            user: userDetail,
-            server: { id: server.id, name: server.name, type: server.type },
-          };
-          updatedSessions.push(activeSession);
+        if (!existingSession) continue;
+
+        const previousState = existingSession.state;
+        const newState = processed.state;
+        const now = new Date();
+
+        // Build update payload with pause tracking
+        const updatePayload: {
+          state: 'playing' | 'paused';
+          quality: string;
+          bitrate: number;
+          progressMs: number | null;
+          lastPausedAt?: Date | null;
+          pausedDurationMs?: number;
+          watched?: boolean;
+        } = {
+          state: newState,
+          quality: processed.quality,
+          bitrate: processed.bitrate,
+          progressMs: processed.progressMs || null,
+        };
+
+        // Handle state transitions for pause tracking
+        if (previousState === 'playing' && newState === 'paused') {
+          // Started pausing - record timestamp
+          updatePayload.lastPausedAt = now;
+        } else if (previousState === 'paused' && newState === 'playing') {
+          // Resumed playing - accumulate pause duration
+          if (existingSession.lastPausedAt) {
+            const pausedMs = now.getTime() - existingSession.lastPausedAt.getTime();
+            updatePayload.pausedDurationMs = (existingSession.pausedDurationMs || 0) + pausedMs;
+          }
+          updatePayload.lastPausedAt = null;
         }
+
+        // Check for watch completion (80% threshold)
+        if (!existingSession.watched && processed.progressMs && processed.totalDurationMs) {
+          const watchPercent = processed.progressMs / processed.totalDurationMs;
+          if (watchPercent >= 0.8) {
+            updatePayload.watched = true;
+          }
+        }
+
+        // Update existing session with state changes and pause tracking
+        await db
+          .update(sessions)
+          .set(updatePayload)
+          .where(eq(sessions.id, existingSession.id));
+
+        // Build active session for cache/broadcast (with updated pause tracking values)
+        const activeSession: ActiveSession = {
+          id: existingSession.id,
+          serverId: server.id,
+          userId,
+          sessionKey: processed.sessionKey,
+          state: newState,
+          mediaType: processed.mediaType,
+          mediaTitle: processed.mediaTitle,
+          // Enhanced media metadata
+          grandparentTitle: processed.grandparentTitle || null,
+          seasonNumber: processed.seasonNumber || null,
+          episodeNumber: processed.episodeNumber || null,
+          year: processed.year || null,
+          thumbPath: processed.thumbPath || null,
+          ratingKey: processed.ratingKey || null,
+          externalSessionId: existingSession.externalSessionId,
+          startedAt: existingSession.startedAt,
+          stoppedAt: null,
+          durationMs: null,
+          totalDurationMs: processed.totalDurationMs || null,
+          progressMs: processed.progressMs || null,
+          // Pause tracking - use updated values
+          lastPausedAt: updatePayload.lastPausedAt ?? existingSession.lastPausedAt,
+          pausedDurationMs: updatePayload.pausedDurationMs ?? existingSession.pausedDurationMs ?? 0,
+          referenceId: existingSession.referenceId,
+          watched: updatePayload.watched ?? existingSession.watched ?? false,
+          // Network/device info
+          ipAddress: processed.ipAddress,
+          geoCity: geo.city,
+          geoRegion: geo.region,
+          geoCountry: geo.country,
+          geoLat: geo.lat,
+          geoLon: geo.lon,
+          playerName: processed.playerName,
+          deviceId: processed.deviceId || null,
+          product: processed.product || null,
+          device: processed.device || null,
+          platform: processed.platform,
+          quality: processed.quality,
+          isTranscode: processed.isTranscode,
+          bitrate: processed.bitrate,
+          user: userDetail,
+          server: { id: server.id, name: server.name, type: server.type },
+        };
+        updatedSessions.push(activeSession);
       }
     }
 
@@ -613,7 +706,26 @@ async function processServerSessions(
         const stoppedSession = stoppedRows[0];
         if (stoppedSession) {
           const stoppedAt = new Date();
-          const durationMs = stoppedAt.getTime() - stoppedSession.startedAt.getTime();
+          const totalElapsedMs = stoppedAt.getTime() - stoppedSession.startedAt.getTime();
+
+          // Calculate final paused duration - accumulate any remaining pause if stopped while paused
+          let finalPausedDurationMs = stoppedSession.pausedDurationMs || 0;
+          if (stoppedSession.lastPausedAt) {
+            // Session was stopped while paused - add the remaining pause time
+            finalPausedDurationMs += stoppedAt.getTime() - stoppedSession.lastPausedAt.getTime();
+          }
+
+          // Calculate actual watch duration (excludes all paused time)
+          const durationMs = Math.max(0, totalElapsedMs - finalPausedDurationMs);
+
+          // Check for watch completion if not already watched
+          let watched = stoppedSession.watched || false;
+          if (!watched && stoppedSession.progressMs && stoppedSession.totalDurationMs) {
+            const watchPercent = stoppedSession.progressMs / stoppedSession.totalDurationMs;
+            if (watchPercent >= 0.8) {
+              watched = true;
+            }
+          }
 
           await db
             .update(sessions)
@@ -621,6 +733,9 @@ async function processServerSessions(
               state: 'stopped',
               stoppedAt,
               durationMs,
+              pausedDurationMs: finalPausedDurationMs,
+              lastPausedAt: null, // Clear the pause timestamp
+              watched,
             })
             .where(eq(sessions.id, stoppedSession.id));
         }

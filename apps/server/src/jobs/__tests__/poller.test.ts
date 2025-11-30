@@ -70,8 +70,15 @@ function createTestSession(overrides: Partial<Session> = {}): Session {
     durationMs: overrides.durationMs ?? null,
     totalDurationMs: overrides.totalDurationMs ?? 7200000,
     progressMs: overrides.progressMs ?? 0,
+    // Pause tracking
+    lastPausedAt: overrides.lastPausedAt ?? null,
+    pausedDurationMs: overrides.pausedDurationMs ?? 0,
+    referenceId: overrides.referenceId ?? null,
+    watched: overrides.watched ?? false,
+    // Network/device info
     ipAddress: overrides.ipAddress ?? '192.168.1.1',
     geoCity: overrides.geoCity ?? 'New York',
+    geoRegion: overrides.geoRegion ?? 'New York',
     geoCountry: overrides.geoCountry ?? 'US',
     geoLat: overrides.geoLat ?? 40.7128,
     geoLon: overrides.geoLon ?? -74.006,
