@@ -12,6 +12,7 @@ import { UserDetail } from '@/pages/UserDetail';
 import { Rules } from '@/pages/Rules';
 import { Violations } from '@/pages/Violations';
 import { Settings } from '@/pages/Settings';
+import { Debug } from '@/pages/Debug';
 import { NotFound } from '@/pages/NotFound';
 
 export function App() {
@@ -46,6 +47,9 @@ export function App() {
           <Route path="rules" element={<Rules />} />
           <Route path="violations" element={<Violations />} />
           <Route path="settings/*" element={<Settings />} />
+
+          {/* Hidden debug page (owner only) */}
+          <Route path="debug" element={<Debug />} />
 
           {/* Legacy redirects */}
           <Route path="analytics" element={<Navigate to="/stats/activity" replace />} />
