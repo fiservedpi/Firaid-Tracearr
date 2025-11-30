@@ -47,9 +47,12 @@ interface EnvInfo {
 async function debugFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = tokenStorage.getAccessToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+  // Only set Content-Type for requests with a body
+  if (options.body) {
+    headers['Content-Type'] = 'application/json';
+  }
   // Merge additional headers if provided as a plain object
   if (options.headers && typeof options.headers === 'object' && !Array.isArray(options.headers)) {
     Object.assign(headers, options.headers);
