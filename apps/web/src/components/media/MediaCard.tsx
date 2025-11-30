@@ -12,6 +12,8 @@ interface MediaCardProps {
   serverId?: string | null;
   rank?: number;
   className?: string;
+  /** For TV shows (aggregated series), number of unique episodes watched */
+  episodeCount?: number;
 }
 
 function MediaIcon({ type, className }: { type: string; className?: string }) {
@@ -43,11 +45,20 @@ export function MediaCard({
   serverId,
   rank,
   className,
+  episodeCount,
 }: MediaCardProps) {
   const imageUrl = getImageUrl(serverId, thumbPath, 300, 450);
   const bgImageUrl = getImageUrl(serverId, thumbPath, 800, 400);
+  // For individual episodes: showTitle is series name, title is episode name
+  // For aggregated shows: title is series name (no showTitle), episodeCount indicates it's aggregated
   const displayTitle = type === 'episode' && showTitle ? showTitle : title;
-  const subtitle = type === 'episode' ? title : year ? `(${year})` : '';
+  const subtitle = episodeCount
+    ? `${episodeCount} episodes • ${year || ''}`
+    : type === 'episode'
+    ? title
+    : year
+    ? `(${year})`
+    : '';
 
   return (
     <div

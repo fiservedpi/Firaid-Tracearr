@@ -445,7 +445,11 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
   );
 
   /**
-   * GET /stats/top-content - Top movies, shows by play count
+   * GET /stats/top-content - Top movies and shows by play count
+   *
+   * Returns separate arrays for movies and TV shows:
+   * - Movies: Grouped by movie title
+   * - Shows: Aggregated by series (grandparent_title), counting total episode plays
    */
   app.get(
     '/top-content',
@@ -459,51 +463,84 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
       const { period } = query.data;
       const startDate = getDateRange(period);
 
-      // Count unique plays per title, include image data
-      // Note: server_id is UUID type, so cast to text BEFORE aggregating
-      const result = await db.execute(sql`
-        SELECT
-          media_title,
-          media_type,
-          grandparent_title,
-          year,
-          COUNT(DISTINCT COALESCE(reference_id, id))::int as play_count,
-          COALESCE(SUM(duration_ms), 0)::bigint as total_watch_ms,
-          MAX(thumb_path) as thumb_path,
-          MAX(server_id::text) as server_id,
-          MAX(rating_key) as rating_key
-        FROM sessions
-        WHERE started_at >= ${startDate}
-        GROUP BY media_title, media_type, grandparent_title, year
-        ORDER BY play_count DESC
-        LIMIT 20
-      `);
+      // Run both queries in parallel for better performance
+      const [moviesResult, showsResult] = await Promise.all([
+        // Query top movies (media_type = 'movie')
+        db.execute(sql`
+          SELECT
+            media_title,
+            year,
+            COUNT(DISTINCT COALESCE(reference_id, id))::int as play_count,
+            COALESCE(SUM(duration_ms), 0)::bigint as total_watch_ms,
+            MAX(thumb_path) as thumb_path,
+            MAX(server_id::text) as server_id,
+            MAX(rating_key) as rating_key
+          FROM sessions
+          WHERE started_at >= ${startDate} AND media_type = 'movie'
+          GROUP BY media_title, year
+          ORDER BY play_count DESC
+          LIMIT 10
+        `),
+        // Query top TV shows (aggregate by series using grandparent_title)
+        db.execute(sql`
+          SELECT
+            grandparent_title,
+            MAX(year) as year,
+            COUNT(DISTINCT COALESCE(reference_id, id))::int as play_count,
+            COUNT(DISTINCT media_title)::int as episode_count,
+            COALESCE(SUM(duration_ms), 0)::bigint as total_watch_ms,
+            MAX(thumb_path) as thumb_path,
+            MAX(server_id::text) as server_id,
+            MAX(rating_key) as rating_key
+          FROM sessions
+          WHERE started_at >= ${startDate} AND media_type = 'episode' AND grandparent_title IS NOT NULL
+          GROUP BY grandparent_title
+          ORDER BY play_count DESC
+          LIMIT 10
+        `),
+      ]);
 
-      const topContent = (result.rows as {
+      const movies = (moviesResult.rows as {
         media_title: string;
-        media_type: string;
-        grandparent_title: string | null;
         year: number | null;
         play_count: number;
         total_watch_ms: string;
         thumb_path: string | null;
         server_id: string | null;
         rating_key: string | null;
-      }[]);
+      }[]).map((m) => ({
+        title: m.media_title,
+        type: 'movie' as const,
+        year: m.year,
+        playCount: m.play_count,
+        watchTimeHours: Math.round((Number(m.total_watch_ms) / (1000 * 60 * 60)) * 10) / 10,
+        thumbPath: m.thumb_path,
+        serverId: m.server_id,
+        ratingKey: m.rating_key,
+      }));
 
-      return {
-        data: topContent.map((c) => ({
-          title: c.media_title,
-          type: c.media_type,
-          showTitle: c.grandparent_title, // For episodes, this is the show name
-          year: c.year,
-          playCount: c.play_count,
-          watchTimeHours: Math.round((Number(c.total_watch_ms) / (1000 * 60 * 60)) * 10) / 10,
-          thumbPath: c.thumb_path,
-          serverId: c.server_id,
-          ratingKey: c.rating_key,
-        })),
-      };
+      const shows = (showsResult.rows as {
+        grandparent_title: string;
+        year: number | null;
+        play_count: number;
+        episode_count: number;
+        total_watch_ms: string;
+        thumb_path: string | null;
+        server_id: string | null;
+        rating_key: string | null;
+      }[]).map((s) => ({
+        title: s.grandparent_title, // Series name
+        type: 'episode' as const,
+        year: s.year,
+        playCount: s.play_count,
+        episodeCount: s.episode_count, // Number of unique episodes watched
+        watchTimeHours: Math.round((Number(s.total_watch_ms) / (1000 * 60 * 60)) * 10) / 10,
+        thumbPath: s.thumb_path,
+        serverId: s.server_id,
+        ratingKey: s.rating_key,
+      }));
+
+      return { movies, shows };
     }
   );
 

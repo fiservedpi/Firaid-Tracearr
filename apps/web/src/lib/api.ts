@@ -357,18 +357,30 @@ class ApiClient {
       return response.data;
     },
     topContent: async (period?: string) => {
-      const response = await this.request<{ data: {
-        title: string;
-        type: string;
-        showTitle: string | null;
-        year: number | null;
-        playCount: number;
-        watchTimeHours: number;
-        thumbPath: string | null;
-        serverId: string | null;
-        ratingKey: string | null;
-      }[] }>(`/stats/top-content?period=${period ?? 'month'}`);
-      return response.data;
+      const response = await this.request<{
+        movies: {
+          title: string;
+          type: 'movie';
+          year: number | null;
+          playCount: number;
+          watchTimeHours: number;
+          thumbPath: string | null;
+          serverId: string | null;
+          ratingKey: string | null;
+        }[];
+        shows: {
+          title: string;
+          type: 'episode';
+          year: number | null;
+          playCount: number;
+          episodeCount: number;
+          watchTimeHours: number;
+          thumbPath: string | null;
+          serverId: string | null;
+          ratingKey: string | null;
+        }[];
+      }>(`/stats/top-content?period=${period ?? 'month'}`);
+      return response;
     },
     concurrent: async (period?: string) => {
       const response = await this.request<{ data: { hour: string; maxConcurrent: number }[] }>(

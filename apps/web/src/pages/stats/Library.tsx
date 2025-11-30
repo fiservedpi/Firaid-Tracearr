@@ -9,9 +9,9 @@ export function StatsLibrary() {
   const [period, setPeriod] = useState<StatsPeriod>('month');
   const topContent = useTopContent(period);
 
-  // Split content by type
-  const movies = topContent.data?.filter((c) => c.type === 'movie') ?? [];
-  const shows = topContent.data?.filter((c) => c.type === 'episode') ?? [];
+  // Use separate movies and shows arrays from API
+  const movies = topContent.data?.movies ?? [];
+  const shows = topContent.data?.shows ?? [];
 
   return (
     <div className="space-y-8">
@@ -59,7 +59,6 @@ export function StatsLibrary() {
                 <MediaCard
                   title={topMovie.title}
                   type={topMovie.type}
-                  showTitle={topMovie.showTitle}
                   year={topMovie.year}
                   playCount={topMovie.playCount}
                   watchTimeHours={topMovie.watchTimeHours}
@@ -76,7 +75,6 @@ export function StatsLibrary() {
                         key={`${movie.title}-${movie.year}`}
                         title={movie.title}
                         type={movie.type}
-                        showTitle={movie.showTitle}
                         year={movie.year}
                         playCount={movie.playCount}
                         thumbPath={movie.thumbPath}
@@ -122,17 +120,17 @@ export function StatsLibrary() {
             }
             return (
               <div className="space-y-4">
-                {/* Featured #1 show */}
+                {/* Featured #1 show - title is the series name */}
                 <MediaCard
                   title={topShow.title}
                   type={topShow.type}
-                  showTitle={topShow.showTitle}
                   year={topShow.year}
                   playCount={topShow.playCount}
                   watchTimeHours={topShow.watchTimeHours}
                   thumbPath={topShow.thumbPath}
                   serverId={topShow.serverId}
                   rank={1}
+                  episodeCount={topShow.episodeCount}
                 />
 
                 {/* Grid of remaining shows */}
@@ -140,15 +138,15 @@ export function StatsLibrary() {
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,180px))] gap-4">
                     {shows.slice(1, 10).map((show, index) => (
                       <MediaCardSmall
-                        key={`${show.showTitle ?? show.title}-${show.year}`}
+                        key={`${show.title}-${show.year}`}
                         title={show.title}
                         type={show.type}
-                        showTitle={show.showTitle}
                         year={show.year}
                         playCount={show.playCount}
                         thumbPath={show.thumbPath}
                         serverId={show.serverId}
                         rank={index + 2}
+                        episodeCount={show.episodeCount}
                         style={{ animationDelay: `${index * 50}ms` }}
                       />
                     ))}

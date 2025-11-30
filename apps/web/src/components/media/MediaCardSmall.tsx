@@ -12,6 +12,8 @@ interface MediaCardSmallProps {
   rank?: number;
   className?: string;
   style?: React.CSSProperties;
+  /** For TV shows (aggregated series), number of unique episodes watched */
+  episodeCount?: number;
 }
 
 function MediaIcon({ type, className }: { type: string; className?: string }) {
@@ -43,8 +45,11 @@ export function MediaCardSmall({
   rank,
   className,
   style,
+  episodeCount,
 }: MediaCardSmallProps) {
   const imageUrl = getImageUrl(serverId, thumbPath);
+  // For individual episodes: showTitle is series name, title is episode name
+  // For aggregated shows: title is series name (no showTitle), episodeCount indicates it's aggregated
   const displayTitle = type === 'episode' && showTitle ? showTitle : title;
 
   return (
@@ -92,7 +97,11 @@ export function MediaCardSmall({
           {displayTitle}
         </h4>
         <p className="truncate text-xs text-muted-foreground">
-          {type === 'episode' ? title : year || type}
+          {episodeCount
+            ? `${episodeCount} eps`
+            : type === 'episode'
+            ? title
+            : year || type}
         </p>
       </div>
     </div>
