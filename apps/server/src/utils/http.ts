@@ -47,7 +47,7 @@ export class HttpClientError extends Error {
    * Convert to ExternalServiceError for known services
    */
   toExternalServiceError(): ExternalServiceError | this {
-    if (this.service === 'plex' || this.service === 'jellyfin' || this.service === 'geoip') {
+    if (this.service === 'plex' || this.service === 'jellyfin' || this.service === 'emby' || this.service === 'geoip') {
       return new ExternalServiceError(this.service, this.message);
     }
     return this;
@@ -261,6 +261,22 @@ export function plexHeaders(token?: string): Record<string, string> {
  * Helper to create Jellyfin-specific headers
  */
 export function jellyfinHeaders(apiKey?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Accept': 'application/json',
+  };
+
+  if (apiKey) {
+    headers['X-Emby-Token'] = apiKey;
+  }
+
+  return headers;
+}
+
+/**
+ * Helper to create Emby-specific headers
+ * Note: Emby uses the same X-Emby-Token header as Jellyfin (Jellyfin forked from Emby)
+ */
+export function embyHeaders(apiKey?: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Accept': 'application/json',
   };

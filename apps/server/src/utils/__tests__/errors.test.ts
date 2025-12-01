@@ -413,13 +413,24 @@ describe('ExternalServiceError', () => {
     expect(error.message).toBe('Geoip error: Database not found');
   });
 
+  it('should use EMBY_ERROR code for emby service', () => {
+    const error = new ExternalServiceError('emby', 'Invalid API key');
+
+    expect(error.statusCode).toBe(502);
+    expect(error.code).toBe(ErrorCodes.EMBY_ERROR);
+    expect(error.name).toBe('ExternalServiceError');
+    expect(error.message).toBe('Emby error: Invalid API key');
+  });
+
   it('should capitalize service name in message', () => {
     const plexError = new ExternalServiceError('plex', 'test');
     const jellyfinError = new ExternalServiceError('jellyfin', 'test');
+    const embyError = new ExternalServiceError('emby', 'test');
     const geoipError = new ExternalServiceError('geoip', 'test');
 
     expect(plexError.message).toMatch(/^Plex error:/);
     expect(jellyfinError.message).toMatch(/^Jellyfin error:/);
+    expect(embyError.message).toMatch(/^Emby error:/);
     expect(geoipError.message).toMatch(/^Geoip error:/);
   });
 });
