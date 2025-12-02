@@ -229,15 +229,15 @@ class ApiClient {
     }>('/auth/me'),
     logout: () => this.request<void>('/auth/logout', { method: 'POST' }),
 
-    // Local account signup
-    signup: (data: { username: string; password: string; email?: string }) =>
+    // Local account signup (email for login, username for display)
+    signup: (data: { email: string; username: string; password: string }) =>
       this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/signup', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
 
-    // Local account login
-    loginLocal: (data: { username: string; password: string }) =>
+    // Local account login (uses email)
+    loginLocal: (data: { email: string; password: string }) =>
       this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ type: 'local', ...data }),

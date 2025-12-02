@@ -13,18 +13,18 @@ import { users } from '../../db/schema.js';
 import { PlexClient } from '../../services/mediaServer/index.js';
 import { hashPassword, verifyPassword } from '../../utils/password.js';
 import { generateTokens } from './utils.js';
-import { getUserByUsername, getOwnerUser } from '../../services/userService.js';
+import { getUserByEmail, getOwnerUser } from '../../services/userService.js';
 
 // Schemas
 const signupSchema = z.object({
-  username: z.string().min(3).max(50),
+  username: z.string().min(3).max(50), // Display name
+  email: z.email(),
   password: z.string().min(8).max(100),
-  email: z.email().optional(),
 });
 
 const localLoginSchema = z.object({
   type: z.literal('local'),
-  username: z.string().min(1),
+  email: z.email(),
   password: z.string().min(1),
 });
 
@@ -42,15 +42,15 @@ export const localRoutes: FastifyPluginAsync = async (app) => {
   app.post('/signup', async (request, reply) => {
     const body = signupSchema.safeParse(request.body);
     if (!body.success) {
-      return reply.badRequest('Invalid signup data: username (3-50 chars), password (8+ chars) required');
+      return reply.badRequest('Invalid signup data: email, username (3-50 chars), password (8+ chars) required');
     }
 
-    const { username, password, email } = body.data;
+    const { username, email, password } = body.data;
 
-    // Check if username already exists
-    const existing = await getUserByUsername(username);
+    // Check if email already exists
+    const existing = await getUserByEmail(email);
     if (existing) {
-      return reply.conflict('Username already taken');
+      return reply.conflict('Email already registered');
     }
 
     // Check if this is the first user (will be owner)
@@ -66,7 +66,7 @@ export const localRoutes: FastifyPluginAsync = async (app) => {
       .insert(users)
       .values({
         username,
-        email: email ?? null,
+        email,
         passwordHash: passwordHashValue,
         role,
       })
@@ -93,24 +93,24 @@ export const localRoutes: FastifyPluginAsync = async (app) => {
     const { type } = body.data;
 
     if (type === 'local') {
-      const { username, password } = body.data;
+      const { email, password } = body.data;
 
-      // Find user by username with password hash
+      // Find user by email with password hash
       const userRows = await db
         .select()
         .from(users)
-        .where(and(eq(users.username, username), isNotNull(users.passwordHash)))
+        .where(and(eq(users.email, email), isNotNull(users.passwordHash)))
         .limit(1);
 
       const user = userRows[0];
       if (!user?.passwordHash) {
-        return reply.unauthorized('Invalid username or password');
+        return reply.unauthorized('Invalid email or password');
       }
 
       // Verify password
       const valid = await verifyPassword(password, user.passwordHash);
       if (!valid) {
-        return reply.unauthorized('Invalid username or password');
+        return reply.unauthorized('Invalid email or password');
       }
 
       app.log.info({ userId: user.id }, 'Local login successful');

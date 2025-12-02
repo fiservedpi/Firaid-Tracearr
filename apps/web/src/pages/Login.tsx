@@ -211,9 +211,9 @@ export function Login() {
 
     try {
       const result = await api.auth.signup({
+        email: email.trim(),
         username: username.trim(),
         password,
-        email: email.trim() || undefined,
       });
 
       if (result.accessToken && result.refreshToken) {
@@ -240,7 +240,7 @@ export function Login() {
 
     try {
       const result = await api.auth.loginLocal({
-        username: username.trim(),
+        email: email.trim(),
         password,
       });
 
@@ -253,7 +253,7 @@ export function Login() {
     } catch (error) {
       toast({
         title: 'Login failed',
-        description: error instanceof Error ? error.message : 'Invalid username or password',
+        description: error instanceof Error ? error.message : 'Invalid email or password',
         variant: 'destructive',
       });
     } finally {
@@ -416,26 +416,27 @@ export function Login() {
               {needsSetup ? (
                 <form onSubmit={handleLocalSignup} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="username">Username</Label>
-                    <Input
-                      id="username"
-                      type="text"
-                      placeholder="Choose a username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      required
-                      minLength={3}
-                      maxLength={50}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email (optional)</Label>
+                    <Label htmlFor="email">Email</Label>
                     <Input
                       id="email"
                       type="email"
                       placeholder="your@email.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="username">Display Name</Label>
+                    <Input
+                      id="username"
+                      type="text"
+                      placeholder="Choose a display name"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      required
+                      minLength={3}
+                      maxLength={50}
                     />
                   </div>
                   <div className="space-y-2">
@@ -462,13 +463,13 @@ export function Login() {
               ) : hasPasswordAuth ? (
                 <form onSubmit={handleLocalLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="username">Username</Label>
+                    <Label htmlFor="email">Email</Label>
                     <Input
-                      id="username"
-                      type="text"
-                      placeholder="Your username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
+                      id="email"
+                      type="email"
+                      placeholder="your@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       required
                     />
                   </div>
