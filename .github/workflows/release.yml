@@ -107,12 +107,13 @@ jobs:
       - name: Check if prerelease
         id: check
         run: |
-          if [[ "${{ github.ref_name }}" == *"-"* ]]; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "This is a prerelease: ${{ github.ref_name }}"
+          TAG="${{ github.ref_name }}"
+          if [[ "$TAG" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "This is a prerelease: $TAG"
           else
-            echo "prerelease=false" >> $GITHUB_OUTPUT
-            echo "This is a stable release: ${{ github.ref_name }}"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "This is a stable release: $TAG"
           fi
 
   build-and-push:

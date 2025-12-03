@@ -33,10 +33,10 @@ jobs:
           # Get commits in last 25 hours (buffer for timing)
           COMMITS=$(git log --since="25 hours ago" --oneline | wc -l)
           if [ "$COMMITS" -gt 0 ]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
             echo "Found $COMMITS new commits"
           else
-            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
             echo "No new commits, skipping build"
           fi
 

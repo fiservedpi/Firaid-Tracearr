@@ -27,19 +27,21 @@ jobs:
       - name: Check if prerelease
         id: check
         run: |
-          if [[ "${{ github.ref_name }}" == *"-"* ]]; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "This is a prerelease: ${{ github.ref_name }}"
+          TAG="${{ github.ref_name }}"
+          if [[ "$TAG" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "This is a prerelease: $TAG"
           else
-            echo "prerelease=false" >> $GITHUB_OUTPUT
-            echo "This is a stable release: ${{ github.ref_name }}"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "This is a stable release: $TAG"
           fi
 
       - name: Get previous tag
         id: prev_tag
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 ${{ github.ref_name }}^ 2>/dev/null || echo "")
-          echo "tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+          echo "tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
           echo "Previous tag: $PREV_TAG"
 
   # Check if mobile code changed since last tag
@@ -61,22 +63,23 @@ jobs:
         id: check
         run: |
           PREV_TAG="${{ needs.check-release-type.outputs.previous_tag }}"
+          CURRENT_TAG="${{ github.ref_name }}"
 
           if [ -z "$PREV_TAG" ]; then
             echo "No previous tag found, assuming mobile changed"
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           # Check if any files in apps/mobile changed
-          CHANGES=$(git diff --name-only "$PREV_TAG" "${{ github.ref_name }}" -- apps/mobile/ | wc -l)
+          CHANGES=$(git diff --name-only "$PREV_TAG" "$CURRENT_TAG" -- apps/mobile/ | wc -l)
 
           if [ "$CHANGES" -gt 0 ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Mobile changes detected: $CHANGES files"
-            git diff --name-only "$PREV_TAG" "${{ github.ref_name }}" -- apps/mobile/
+            git diff --name-only "$PREV_TAG" "$CURRENT_TAG" -- apps/mobile/
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No mobile changes since $PREV_TAG"
           fi
 
@@ -206,22 +209,30 @@ jobs:
 
     steps:
       - name: Report status
+        env:
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.check-release-type.outputs.prerelease }}
+          MOBILE_CHANGED: ${{ needs.check-mobile-changes.outputs.mobile_changed || 'skipped' }}
+          IOS_RESULT: ${{ needs.build-ios.result }}
+          ANDROID_RESULT: ${{ needs.build-android.result }}
         run: |
-          echo "## Mobile Release Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Prerelease**: ${{ needs.check-release-type.outputs.prerelease }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Mobile Changed**: ${{ needs.check-mobile-changes.outputs.mobile_changed || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Mobile Release Summary"
+            echo ""
+            echo "**Tag**: $TAG"
+            echo "**Prerelease**: $PRERELEASE"
+            echo "**Mobile Changed**: $MOBILE_CHANGED"
+            echo ""
 
-          if [[ "${{ needs.check-release-type.outputs.prerelease }}" != "true" ]]; then
-            echo "ℹ️ Skipped: Not a prerelease (stable releases don't trigger mobile builds)" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.check-mobile-changes.outputs.mobile_changed }}" != "true" ]]; then
-            echo "ℹ️ Skipped: No mobile code changes detected" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### Build Status" >> $GITHUB_STEP_SUMMARY
-            echo "- iOS: ${{ needs.build-ios.result }}" >> $GITHUB_STEP_SUMMARY
-            echo "- Android: ${{ needs.build-android.result }}" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Builds submitted to EAS. Check [Expo dashboard](https://expo.dev) for progress." >> $GITHUB_STEP_SUMMARY
-          fi
+            if [[ "$PRERELEASE" != "true" ]]; then
+              echo "ℹ️ Skipped: Not a prerelease (stable releases don't trigger mobile builds)"
+            elif [[ "$MOBILE_CHANGED" != "true" ]]; then
+              echo "ℹ️ Skipped: No mobile code changes detected"
+            else
+              echo "### Build Status"
+              echo "- iOS: $IOS_RESULT"
+              echo "- Android: $ANDROID_RESULT"
+              echo ""
+              echo "Builds submitted to EAS. Check [Expo dashboard](https://expo.dev) for progress."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
