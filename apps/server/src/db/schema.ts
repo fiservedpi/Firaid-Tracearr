@@ -413,6 +413,8 @@ export const settings = pgTable('settings', {
   externalUrl: text('external_url'), // Public URL for mobile/external access (e.g., https://tracearr.example.com)
   basePath: varchar('base_path', { length: 100 }).notNull().default(''), // For subfolder proxies (e.g., /tracearr)
   trustProxy: boolean('trust_proxy').notNull().default(false), // Trust X-Forwarded-* headers from reverse proxy
+  // Mobile access
+  mobileEnabled: boolean('mobile_enabled').notNull().default(false),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

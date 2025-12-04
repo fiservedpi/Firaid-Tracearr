@@ -50,6 +50,13 @@
       "when": 1764806894704,
       "tag": "0006_worthless_blue_shield",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1764865910195,
+      "tag": "0007_tense_pestilence",
+      "breakpoints": true
     }
   ]
 }
