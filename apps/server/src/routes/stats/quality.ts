@@ -8,17 +8,17 @@
  */
 
 import type { FastifyPluginAsync } from 'fastify';
-import { sql, gte } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { statsQuerySchema } from '@tracearr/shared';
 import { db } from '../../db/client.js';
-import { sessions } from '../../db/schema.js';
+import '../../db/schema.js';
 import {
   playsByPlatformSince,
   qualityStatsSince,
   watchTimeSince,
   watchTimeByTypeSince,
 } from '../../db/prepared.js';
-import { getDateRange, hasAggregates } from './utils.js';
+import { getDateRange } from './utils.js';
 
 export const qualityRoutes: FastifyPluginAsync = async (app) => {
   /**

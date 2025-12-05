@@ -458,6 +458,9 @@ async function createNewSession(
       (r) => (r.serverUserId === null || r.serverUserId === serverUserId) && result.violated
     );
     if (matchingRule) {
+      // TODO: Refactor to use createViolationInTransaction pattern for atomicity
+      // Session is already inserted before rule evaluation, so using standalone function for now
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
       await createViolation(matchingRule.id, serverUserId, inserted.id, result, matchingRule, pubSubService);
     }
   }

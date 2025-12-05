@@ -15,7 +15,7 @@ import { createMediaServerClient } from '../../services/mediaServer/index.js';
 import { geoipService, type GeoLocation } from '../../services/geoip.js';
 import { ruleEngine } from '../../services/rules.js';
 import type { CacheService, PubSubService } from '../../services/cache.js';
-import { atomicMultiUpdate, withCacheInvalidation } from '../../services/cache.js';
+import { atomicMultiUpdate } from '../../services/cache.js';
 import type { Redis } from 'ioredis';
 import { sseManager } from '../../services/sseManager.js';
 

@@ -622,7 +622,7 @@ export async function initTimescaleDB(): Promise<{
   try {
     await db.execute(sql`CREATE EXTENSION IF NOT EXISTS timescaledb_toolkit`);
     actions.push('TimescaleDB Toolkit extension enabled');
-  } catch (err) {
+  } catch {
     // Toolkit may not be available in all installations
     console.warn('TimescaleDB Toolkit not available - using standard aggregates');
     actions.push('TimescaleDB Toolkit not available (optional)');
