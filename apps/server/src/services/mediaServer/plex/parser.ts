@@ -450,3 +450,62 @@ export function parseSharedServersXml(
 
   return userMap;
 }
+
+// ============================================================================
+// Server Resource Statistics Parsing
+// ============================================================================
+
+/** Raw statistics resource data point from Plex API */
+interface PlexRawStatisticsResource {
+  at?: unknown;
+  timespan?: unknown;
+  hostCpuUtilization?: unknown;
+  processCpuUtilization?: unknown;
+  hostMemoryUtilization?: unknown;
+  processMemoryUtilization?: unknown;
+}
+
+/** Parsed statistics data point */
+export interface PlexStatisticsDataPoint {
+  at: number;
+  timespan: number;
+  hostCpuUtilization: number;
+  processCpuUtilization: number;
+  hostMemoryUtilization: number;
+  processMemoryUtilization: number;
+}
+
+/**
+ * Parse a single statistics resource data point
+ */
+function parseStatisticsDataPoint(raw: PlexRawStatisticsResource): PlexStatisticsDataPoint {
+  return {
+    at: parseNumber(raw.at),
+    timespan: parseNumber(raw.timespan, 6),
+    hostCpuUtilization: parseNumber(raw.hostCpuUtilization, 0),
+    processCpuUtilization: parseNumber(raw.processCpuUtilization, 0),
+    hostMemoryUtilization: parseNumber(raw.hostMemoryUtilization, 0),
+    processMemoryUtilization: parseNumber(raw.processMemoryUtilization, 0),
+  };
+}
+
+/**
+ * Parse statistics resources response from /statistics/resources endpoint
+ * Returns array of data points sorted by timestamp (newest first)
+ */
+export function parseStatisticsResourcesResponse(data: unknown): PlexStatisticsDataPoint[] {
+  if (!data || typeof data !== 'object') {
+    return [];
+  }
+
+  const container = (data as Record<string, unknown>).MediaContainer;
+  if (!container || typeof container !== 'object') {
+    return [];
+  }
+
+  const rawStats = (container as Record<string, unknown>).StatisticsResources;
+
+  return parseArray(rawStats, (item) =>
+    parseStatisticsDataPoint(item as PlexRawStatisticsResource)
+  ).sort((a, b) => b.at - a.at); // Sort newest first
+}

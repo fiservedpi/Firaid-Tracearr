@@ -25,7 +25,9 @@ import {
   parsePlexTvUser,
   parseXmlUsersResponse,
   parseSharedServersXml,
+  parseStatisticsResourcesResponse,
   type PlexServerResource,
+  type PlexStatisticsDataPoint,
 } from './parser.js';
 
 const PLEX_TV_BASE = 'https://plex.tv';
@@ -135,6 +137,39 @@ export class PlexClient implements IMediaServerClient, IMediaServerClientWithHis
     });
 
     return parseWatchHistoryResponse(data);
+  }
+
+  // ==========================================================================
+  // Server Resource Statistics (Undocumented Endpoint)
+  // ==========================================================================
+
+  /**
+   * Get server resource statistics (CPU, RAM utilization)
+   *
+   * Uses the undocumented /statistics/resources endpoint.
+   * Returns ~27 data points covering ~2.5 minutes of history at 6-second intervals.
+   *
+   * @param timespan - Interval between data points in seconds (default: 6)
+   * @returns Array of resource data points, sorted newest first
+   */
+  async getServerStatistics(timespan: number = 6): Promise<PlexStatisticsDataPoint[]> {
+    const url = `${this.baseUrl}/statistics/resources?timespan=${timespan}`;
+    console.log('[PlexClient] Fetching statistics from:', url);
+    console.log('[PlexClient] Headers:', JSON.stringify(this.buildHeaders(), null, 2));
+
+    const data = await fetchJson<unknown>(url, {
+      headers: this.buildHeaders(),
+      service: 'plex',
+      timeout: 10000,
+    });
+
+    // DEBUG: Log the FULL raw response
+    console.log('[PlexClient] Full raw response:', JSON.stringify(data, null, 2));
+
+    const result = parseStatisticsResourcesResponse(data);
+    console.log('[PlexClient] Parsed result length:', result.length);
+
+    return result;
   }
 
   // ==========================================================================

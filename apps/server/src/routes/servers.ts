@@ -4,7 +4,7 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { eq, inArray } from 'drizzle-orm';
-import { createServerSchema, serverIdParamSchema } from '@tracearr/shared';
+import { createServerSchema, serverIdParamSchema, SERVER_STATS_CONFIG } from '@tracearr/shared';
 import { db } from '../db/client.js';
 import { servers } from '../db/schema.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
@@ -230,6 +230,62 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       } catch (error) {
         app.log.error({ error, serverId: id }, 'Failed to sync server');
         return reply.internalServerError('Failed to sync server');
+      }
+    }
+  );
+
+  /**
+   * GET /servers/:id/statistics - Get server resource statistics (CPU, RAM)
+   * On-demand endpoint for dashboard - data is not stored
+   * Currently only supported for Plex servers (undocumented /statistics/resources endpoint)
+   */
+  app.get(
+    '/:id/statistics',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const params = serverIdParamSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.badRequest('Invalid server ID');
+      }
+
+      const { id } = params.data;
+
+      // Get server with token
+      const serverRows = await db
+        .select()
+        .from(servers)
+        .where(eq(servers.id, id))
+        .limit(1);
+
+      const server = serverRows[0];
+      if (!server) {
+        return reply.notFound('Server not found');
+      }
+
+      // Only Plex is supported for now (Jellyfin/Emby don't have equivalent endpoint)
+      if (server.type !== 'plex') {
+        return reply.badRequest('Server statistics are only available for Plex servers');
+      }
+
+      try {
+        const client = new PlexClient({
+          url: server.url,
+          token: server.token,
+        });
+
+        const data = await client.getServerStatistics(SERVER_STATS_CONFIG.TIMESPAN_SECONDS);
+
+        // DEBUG: Log what we got back
+        app.log.info({ serverId: id, dataLength: data.length, firstItem: data[0] }, 'Server statistics fetched');
+
+        return {
+          serverId: id,
+          data,
+          fetchedAt: new Date().toISOString(),
+        };
+      } catch (error) {
+        app.log.error({ error, serverId: id }, 'Failed to fetch server statistics');
+        return reply.internalServerError('Failed to fetch server statistics');
       }
     }
   );
