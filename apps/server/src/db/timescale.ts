@@ -481,9 +481,10 @@ async function setupRefreshPolicies(): Promise<void> {
     )
   `);
 
+  // daily_play_patterns uses 1 week buckets, so start_offset must be >= 1 week
   await db.execute(sql`
     SELECT add_continuous_aggregate_policy('daily_play_patterns',
-      start_offset => INTERVAL '3 days',
+      start_offset => INTERVAL '2 weeks',
       end_offset => INTERVAL '1 hour',
       schedule_interval => INTERVAL '5 minutes',
       if_not_exists => true

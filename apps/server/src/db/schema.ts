@@ -292,6 +292,10 @@ export const mobileSessions = pgTable(
   'mobile_sessions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    // Link to user identity for multi-user support
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     refreshTokenHash: varchar('refresh_token_hash', { length: 64 }).notNull().unique(), // SHA-256
     deviceName: varchar('device_name', { length: 100 }).notNull(),
     deviceId: varchar('device_id', { length: 100 }).notNull(),
@@ -302,6 +306,7 @@ export const mobileSessions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index('mobile_sessions_user_idx').on(table.userId),
     index('mobile_sessions_device_id_idx').on(table.deviceId),
     index('mobile_sessions_refresh_token_idx').on(table.refreshTokenHash),
     index('mobile_sessions_expo_push_token_idx').on(table.expoPushToken),
@@ -435,6 +440,8 @@ export const serversRelations = relations(servers, ({ many }) => ({
 
 export const usersRelations = relations(users, ({ many }) => ({
   serverUsers: many(serverUsers),
+  mobileSessions: many(mobileSessions),
+  mobileTokens: many(mobileTokens),
 }));
 
 export const serverUsersRelations = relations(serverUsers, ({ one, many }) => ({
@@ -487,6 +494,10 @@ export const violationsRelations = relations(violations, ({ one }) => ({
 }));
 
 export const mobileSessionsRelations = relations(mobileSessions, ({ one }) => ({
+  user: one(users, {
+    fields: [mobileSessions.userId],
+    references: [users.id],
+  }),
   notificationPreferences: one(notificationPreferences, {
     fields: [mobileSessions.id],
     references: [notificationPreferences.mobileSessionId],
@@ -497,5 +508,12 @@ export const notificationPreferencesRelations = relations(notificationPreference
   mobileSession: one(mobileSessions, {
     fields: [notificationPreferences.mobileSessionId],
     references: [mobileSessions.id],
+  }),
+}));
+
+export const mobileTokensRelations = relations(mobileTokens, ({ one }) => ({
+  createdByUser: one(users, {
+    fields: [mobileTokens.createdBy],
+    references: [users.id],
   }),
 }));

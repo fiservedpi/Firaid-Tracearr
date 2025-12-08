@@ -543,16 +543,19 @@ export const mobileRoutes: FastifyPluginAsync = async (app) => {
               platform,
               deviceSecret: deviceSecret ?? null,
               lastSeenAt: new Date(),
+              // Update userId in case the token creator changed
+              userId: owner.id,
             })
             .where(eq(mobileSessions.id, existingSession[0]!.id));
         } else {
-          // Create new session
+          // Create new session - link to the owner user who generated the pairing token
           await tx.insert(mobileSessions).values({
             refreshTokenHash,
             deviceName,
             deviceId,
             platform,
             deviceSecret: deviceSecret ?? null,
+            userId: owner.id,
           });
         }
 
