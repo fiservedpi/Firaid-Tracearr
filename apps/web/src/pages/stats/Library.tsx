@@ -70,7 +70,7 @@ export function StatsLibrary() {
                 {/* Grid of remaining movies */}
                 {movies.length > 1 && (
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,180px))] gap-4">
-                    {movies.slice(1, 10).map((movie, index) => (
+                    {movies.slice(1, 10).map((movie, index: number) => (
                       <MediaCardSmall
                         key={`${movie.title}-${movie.year}`}
                         title={movie.title}
@@ -136,7 +136,7 @@ export function StatsLibrary() {
                 {/* Grid of remaining shows */}
                 {shows.length > 1 && (
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,180px))] gap-4">
-                    {shows.slice(1, 10).map((show, index) => (
+                    {shows.slice(1, 10).map((show, idx: number) => (
                       <MediaCardSmall
                         key={`${show.title}-${show.year}`}
                         title={show.title}
@@ -145,9 +145,9 @@ export function StatsLibrary() {
                         playCount={show.playCount}
                         thumbPath={show.thumbPath}
                         serverId={show.serverId}
-                        rank={index + 2}
+                        rank={idx + 2}
                         episodeCount={show.episodeCount}
-                        style={{ animationDelay: `${index * 50}ms` }}
+                        style={{ animationDelay: `${idx * 50}ms` }}
                       />
                     ))}
                   </div>

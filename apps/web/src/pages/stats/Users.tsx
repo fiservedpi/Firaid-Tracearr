@@ -135,7 +135,7 @@ export function StatsUsers() {
 
               {/* Key prop forces re-render on period change for animations */}
               <div key={`list-${period}`} className="space-y-2">
-                {listUsers.map((user, index) => (
+                {listUsers.map((user, index: number) => (
                   <UserRow
                     key={user.serverUserId}
                     userId={user.serverUserId}

@@ -38,7 +38,7 @@ export function Login() {
   const [plexServers, setPlexServers] = useState<PlexServerInfo[]>([]);
   const [plexTempToken, setPlexTempToken] = useState<string | null>(null);
   const [connectingToServer, setConnectingToServer] = useState<string | null>(null);
-  const [plexPopup, setPlexPopup] = useState<Window | null>(null);
+  const [plexPopup, setPlexPopup] = useState<ReturnType<typeof window.open>>(null);
 
   // Local auth state
   const [localLoading, setLocalLoading] = useState(false);
