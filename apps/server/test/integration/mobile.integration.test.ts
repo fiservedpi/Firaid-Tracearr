@@ -502,6 +502,7 @@ describe('Mobile Authentication Integration Tests', () => {
       // Create 5 existing sessions (MAX_PAIRED_DEVICES)
       for (let i = 0; i < 5; i++) {
         await db.insert(mobileSessions).values({
+          userId: testData.ownerId,
           refreshTokenHash: `existing-refresh-hash-${i}-abcdef1234567890abc`,
           deviceName: `Existing Device ${i}`,
           deviceId: `existing-device-${i}`,
@@ -678,6 +679,7 @@ describe('Mobile Authentication Integration Tests', () => {
       const [session] = await db
         .insert(mobileSessions)
         .values({
+          userId: testData.ownerId,
           refreshTokenHash: 'test-refresh-hash-for-deletion-1234567890abcdef',
           deviceName: 'Device to Delete',
           deviceId: 'device-to-delete',
@@ -756,6 +758,7 @@ describe('Mobile Authentication Integration Tests', () => {
       // Create multiple mobile sessions
       for (let i = 0; i < 3; i++) {
         await db.insert(mobileSessions).values({
+          userId: testData.ownerId,
           refreshTokenHash: `bulk-delete-refresh-hash-${i}-abcdef1234567890`,
           deviceName: `Device ${i}`,
           deviceId: `device-bulk-${i}`,
@@ -824,6 +827,7 @@ describe('Mobile Authentication Integration Tests', () => {
     it('should return mobile config for owner', async () => {
       // Create a session to verify it appears in config
       await db.insert(mobileSessions).values({
+        userId: testData.ownerId,
         refreshTokenHash: 'config-test-refresh-hash-abcdef1234567890abcd',
         deviceName: 'Config Test Device',
         deviceId: 'device-config-test',
@@ -920,6 +924,7 @@ describe('Mobile Authentication Integration Tests', () => {
       // Create some sessions
       for (let i = 0; i < 2; i++) {
         await db.insert(mobileSessions).values({
+          userId: testData.ownerId,
           refreshTokenHash: `disable-test-refresh-hash-${i}-abcdef1234567`,
           deviceName: `Device ${i}`,
           deviceId: `device-disable-${i}`,
