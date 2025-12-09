@@ -4,6 +4,7 @@ import type {
   UserRole,
   ServerUserWithIdentity,
   ServerUserDetail,
+  ServerUserFullDetail,
   Session,
   SessionWithDetails,
   ActiveSession,
@@ -20,6 +21,7 @@ import type {
   Settings,
   PaginatedResponse,
   MobileConfig,
+  TerminationLogWithDetails,
 } from '@tracearr/shared';
 import { API_BASE_PATH } from '@tracearr/shared';
 
@@ -356,6 +358,7 @@ class ApiClient {
       return this.request<PaginatedResponse<ServerUserWithIdentity>>(`/users?${searchParams.toString()}`);
     },
     get: (id: string) => this.request<ServerUserDetail>(`/users/${id}`),
+    getFull: (id: string) => this.request<ServerUserFullDetail>(`/users/${id}/full`),
     update: (id: string, data: { trustScore?: number }) =>
       this.request<ServerUserWithIdentity>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     sessions: (id: string, params?: { page?: number; pageSize?: number }) => {
@@ -369,6 +372,10 @@ class ApiClient {
     devices: async (id: string) => {
       const response = await this.request<{ data: UserDevice[] }>(`/users/${id}/devices`);
       return response.data;
+    },
+    terminations: (id: string, params?: { page?: number; pageSize?: number }) => {
+      const query = new URLSearchParams(params as Record<string, string>).toString();
+      return this.request<PaginatedResponse<TerminationLogWithDetails>>(`/users/${id}/terminations?${query}`);
     },
   };
 
@@ -390,6 +397,11 @@ class ApiClient {
       return response.data;
     },
     get: (id: string) => this.request<Session>(`/sessions/${id}`),
+    terminate: (id: string, reason?: string) =>
+      this.request<{ success: boolean; terminationLogId: string; message: string }>(
+        `/sessions/${id}/terminate`,
+        { method: 'POST', body: JSON.stringify({ reason }) }
+      ),
   };
 
   // Rules

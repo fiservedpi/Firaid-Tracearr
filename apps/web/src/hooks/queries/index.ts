@@ -17,15 +17,18 @@ export {
 
 // Session hooks
 export { useSessions, useActiveSessions, useSession } from './useSessions';
+export { useTerminateSession } from './useTerminateSession';
 
 // User hooks
 export {
   useUsers,
   useUser,
+  useUserFull,
   useUserSessions,
   useUpdateUser,
   useUserLocations,
   useUserDevices,
+  useUserTerminations,
 } from './useUsers';
 
 // Rule hooks

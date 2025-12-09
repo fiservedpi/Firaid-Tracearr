@@ -12,12 +12,14 @@ import {
   sessionQuerySchema,
   sessionIdParamSchema,
   serverIdFilterSchema,
+  terminateSessionBodySchema,
   REDIS_KEYS,
   type ActiveSession,
 } from '@tracearr/shared';
 import { db } from '../db/client.js';
 import { sessions, serverUsers, servers } from '../db/schema.js';
 import { filterByServerAccess, hasServerAccess } from '../utils/serverFiltering.js';
+import { terminateSession } from '../services/termination.js';
 
 export const sessionRoutes: FastifyPluginAsync = async (app) => {
   /**
@@ -421,6 +423,89 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
       }
 
       return session;
+    }
+  );
+
+  /**
+   * POST /sessions/:id/terminate - Terminate a playback session
+   *
+   * Requires admin access. Sends a stop command to the media server
+   * and logs the termination for auditing.
+   */
+  app.post(
+    '/:id/terminate',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const params = sessionIdParamSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.badRequest('Invalid session ID');
+      }
+
+      const body = terminateSessionBodySchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.badRequest('Invalid request body');
+      }
+
+      const { id } = params.data;
+      const { reason } = body.data;
+      const authUser = request.user;
+
+      // Only admins and owners can terminate sessions
+      if (authUser.role !== 'owner' && authUser.role !== 'admin') {
+        return reply.forbidden('Only administrators can terminate sessions');
+      }
+
+      // Verify the session exists and user has access to its server
+      const session = await db
+        .select({
+          id: sessions.id,
+          serverId: sessions.serverId,
+          serverUserId: sessions.serverUserId,
+          state: sessions.state,
+        })
+        .from(sessions)
+        .where(eq(sessions.id, id))
+        .limit(1);
+
+      const sessionData = session[0];
+      if (!sessionData) {
+        return reply.notFound('Session not found');
+      }
+
+      if (!hasServerAccess(authUser, sessionData.serverId)) {
+        return reply.forbidden('You do not have access to this server');
+      }
+
+      // Check if session is already stopped
+      if (sessionData.state === 'stopped') {
+        return reply.conflict('Session has already ended');
+      }
+
+      // Attempt termination
+      const result = await terminateSession({
+        sessionId: id,
+        trigger: 'manual',
+        triggeredByUserId: authUser.userId,
+        reason,
+      });
+
+      if (!result.success) {
+        app.log.error(
+          { sessionId: id, error: result.error, terminationLogId: result.terminationLogId },
+          'Failed to terminate session'
+        );
+        return reply.code(500).send({
+          success: false,
+          error: result.error,
+          terminationLogId: result.terminationLogId,
+        });
+      }
+
+      return {
+        success: true,
+        terminationLogId: result.terminationLogId,
+        message: 'Stream termination command sent successfully',
+      };
     }
   );
 };

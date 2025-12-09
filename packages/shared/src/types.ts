@@ -89,6 +89,46 @@ export interface ServerUserDetail extends ServerUserWithIdentity {
   };
 }
 
+// Violation summary for embedded responses (simpler than ViolationWithDetails)
+export interface ViolationSummary {
+  id: string;
+  ruleId: string;
+  rule: {
+    name: string;
+    type: string;
+  };
+  serverUserId: string;
+  sessionId: string;
+  mediaTitle: string | null;
+  severity: string;
+  data: Record<string, unknown>;
+  createdAt: Date;
+  acknowledgedAt: Date | null;
+}
+
+// Full user detail with all related data - returned by GET /users/:id/full
+// This aggregate response reduces 6 API calls to 1 for the UserDetail page
+export interface ServerUserFullDetail {
+  user: ServerUserDetail;
+  sessions: {
+    data: Session[];
+    total: number;
+    hasMore: boolean;
+  };
+  locations: UserLocation[];
+  devices: UserDevice[];
+  violations: {
+    data: ViolationSummary[];
+    total: number;
+    hasMore: boolean;
+  };
+  terminations: {
+    data: TerminationLogWithDetails[];
+    total: number;
+    hasMore: boolean;
+  };
+}
+
 export interface AuthUser {
   userId: string;
   username: string;
@@ -752,4 +792,32 @@ export interface SSEConnectionStatus {
   lastEventAt: Date | null;
   reconnectAttempts: number;
   error: string | null;
+}
+
+// =============================================================================
+// Termination Log Types
+// =============================================================================
+
+// Trigger source for stream terminations
+export type TerminationTrigger = 'manual' | 'rule';
+
+// Termination log with joined details for display
+export interface TerminationLogWithDetails {
+  id: string;
+  sessionId: string;
+  serverId: string;
+  serverUserId: string;
+  trigger: TerminationTrigger;
+  triggeredByUserId: string | null;
+  triggeredByUsername: string | null; // Joined from users table
+  ruleId: string | null;
+  ruleName: string | null; // Joined from rules table
+  violationId: string | null;
+  reason: string | null;
+  success: boolean;
+  errorMessage: string | null;
+  createdAt: Date;
+  // Session info for context
+  mediaTitle: string | null;
+  mediaType: MediaType | null;
 }

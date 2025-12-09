@@ -59,6 +59,12 @@ export const sessionIdParamSchema = z.object({
   id: uuidSchema,
 });
 
+// Session termination schema
+export const terminateSessionBodySchema = z.object({
+  /** Optional message to display to user (Plex only, ignored by Jellyfin/Emby) */
+  reason: z.string().max(500).optional(),
+});
+
 // Rule schemas
 export const impossibleTravelParamsSchema = z.object({
   maxSpeedKmh: z.number().positive().default(500),

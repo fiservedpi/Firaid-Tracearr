@@ -12,6 +12,8 @@ export type {
   ServerUser,
   ServerUserWithIdentity,
   ServerUserDetail,
+  ServerUserFullDetail,
+  ViolationSummary,
   UserRole,
   AuthUser,
   UserLocation,
@@ -87,6 +89,9 @@ export type {
   PlexStatusNotification,
   PlexTranscodeNotification,
   SSEConnectionStatus,
+  // Termination logs
+  TerminationTrigger,
+  TerminationLogWithDetails,
 } from './types.js';
 
 // Schema exports
@@ -106,6 +111,7 @@ export {
   // Session
   sessionQuerySchema,
   sessionIdParamSchema,
+  terminateSessionBodySchema,
   // Rule
   impossibleTravelParamsSchema,
   simultaneousLocationsParamsSchema,

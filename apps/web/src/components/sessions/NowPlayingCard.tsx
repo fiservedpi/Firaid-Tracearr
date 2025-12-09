@@ -1,9 +1,13 @@
-import { Monitor, Smartphone, Tablet, Tv, Play, Pause, Zap, Server } from 'lucide-react';
+import { useState } from 'react';
+import { Monitor, Smartphone, Tablet, Tv, Play, Pause, Zap, Server, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { useEstimatedProgress } from '@/hooks/useEstimatedProgress';
+import { useAuth } from '@/hooks/useAuth';
+import { TerminateSessionDialog } from './TerminateSessionDialog';
 import type { ActiveSession } from '@tracearr/shared';
 
 interface NowPlayingCardProps {
@@ -73,6 +77,11 @@ function getMediaDisplay(session: ActiveSession): { title: string; subtitle: str
 
 export function NowPlayingCard({ session }: NowPlayingCardProps) {
   const { title, subtitle } = getMediaDisplay(session);
+  const { user } = useAuth();
+  const [showTerminateDialog, setShowTerminateDialog] = useState(false);
+
+  // Only admin/owner can terminate sessions
+  const canTerminate = user?.role === 'admin' || user?.role === 'owner';
 
   // Use estimated progress for smooth updates between SSE/poll events
   const { estimatedProgressMs, progressPercent } = useEstimatedProgress(session);
@@ -172,6 +181,22 @@ export function NowPlayingCard({ session }: NowPlayingCardProps) {
               <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted">
                 <DeviceIcon session={session} className="h-3.5 w-3.5 text-muted-foreground" />
               </div>
+
+              {/* Terminate button - admin/owner only */}
+              {canTerminate && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowTerminateDialog(true);
+                  }}
+                  title="Terminate stream"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </div>
           </div>
 
@@ -211,6 +236,15 @@ export function NowPlayingCard({ session }: NowPlayingCardProps) {
         </span>
         <span className="flex-shrink-0">{session.quality ?? 'Unknown quality'}</span>
       </div>
+
+      {/* Terminate confirmation dialog */}
+      <TerminateSessionDialog
+        open={showTerminateDialog}
+        onOpenChange={setShowTerminateDialog}
+        sessionId={session.id}
+        mediaTitle={title}
+        username={session.user.username}
+      />
     </div>
   );
 }
