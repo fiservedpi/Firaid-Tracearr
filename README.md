@@ -66,31 +66,46 @@ If you just want to see stats, Tautulli works fine. If you're tired of your brot
 
 ## Quick Start
 
+### Option 1: All-in-One (Recommended)
+
+The supervised image bundles TimescaleDB, Redis, and Tracearr in a single container. No external database required. Secrets are auto-generated on first run.
+
 ```bash
-# Pull and run
-docker pull ghcr.io/connorgallopo/tracearr:latest
-docker compose -f docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.supervised.yml up -d
 ```
 
 Open `http://localhost:3000` and connect your Plex, Jellyfin, or Emby server.
 
-### Docker Tags
+### Option 2: Separate Services
 
-| Tag | What you get |
-|-----|--------------|
-| `latest` | Stable releases |
-| `next` | Latest prerelease (alpha/beta/rc) |
-| `nightly` | Bleeding edge, built daily from main |
-| `0.1.0-alpha.9` | Specific version |
+If you already have TimescaleDB/PostgreSQL and Redis, or prefer managing services separately:
 
 ```bash
-# Stable
+# Copy and configure environment
+cp docker/.env.example docker/.env
+# Edit docker/.env with your secrets (generate with: openssl rand -hex 32)
+
+docker compose -f docker/docker-compose.yml up -d
+```
+
+### Docker Tags
+
+| Tag | Description |
+|-----|-------------|
+| `latest` | Stable release (requires external DB/Redis) |
+| `supervised` | All-in-one stable release |
+| `next` | Latest prerelease |
+| `supervised-nightly` | All-in-one nightly build |
+| `nightly` | Bleeding edge nightly |
+
+```bash
+# All-in-one (easiest)
+docker pull ghcr.io/connorgallopo/tracearr:supervised
+
+# Stable (requires external services)
 docker pull ghcr.io/connorgallopo/tracearr:latest
 
 # Living on the edge
-docker pull ghcr.io/connorgallopo/tracearr:next
-
-# I like broken things
 docker pull ghcr.io/connorgallopo/tracearr:nightly
 ```
 
