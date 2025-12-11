@@ -579,10 +579,28 @@ class ApiClient {
           { method: 'POST', body: JSON.stringify({ url, apiKey }) }
         ),
       start: (serverId: string) =>
-        this.request<{ status: string; message: string }>(
+        this.request<{ status: string; jobId?: string; message: string }>(
           '/import/tautulli',
           { method: 'POST', body: JSON.stringify({ serverId }) }
         ),
+      getActive: (serverId: string) =>
+        this.request<{
+          active: boolean;
+          jobId?: string;
+          state?: string;
+          progress?: number | object;
+          createdAt?: number;
+        }>(`/import/tautulli/active/${serverId}`),
+      getStatus: (jobId: string) =>
+        this.request<{
+          jobId: string;
+          state: string;
+          progress: number | object | null;
+          result?: { success: boolean; imported: number; skipped: number; errors: number; message: string };
+          failedReason?: string;
+          createdAt?: number;
+          finishedAt?: number;
+        }>(`/import/tautulli/${jobId}`),
     },
   };
 

@@ -1303,6 +1303,7 @@ function ImportSettings() {
   const [connectionMessage, setConnectionMessage] = useState('');
   const [importProgress, setImportProgress] = useState<TautulliImportProgress | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
   // Handle both array and wrapped response formats
   const servers = Array.isArray(serversData)
@@ -1317,8 +1318,54 @@ function ImportSettings() {
     if (settings) {
       setTautulliUrl(settings.tautulliUrl ?? '');
       setTautulliApiKey(settings.tautulliApiKey ?? '');
+      // If we have saved Tautulli settings, mark connection as success
+      if (settings.tautulliUrl && settings.tautulliApiKey) {
+        setConnectionStatus('success');
+      }
     }
   }, [settings]);
+
+  // Check for active import on mount for each Plex server
+  useEffect(() => {
+    if (plexServers.length === 0) return;
+
+    const checkActiveImports = async () => {
+      for (const server of plexServers) {
+        try {
+          const result = await api.import.tautulli.getActive(server.id);
+          if (result.active && result.jobId) {
+            setSelectedServerId(server.id);
+            setActiveJobId(result.jobId);
+            setIsImporting(true);
+
+            // BullMQ stores progress as percentage (0-100)
+            // We'll get detailed progress from WebSocket events
+            const progressPercent = typeof result.progress === 'number' ? result.progress : 0;
+            setImportProgress({
+              status: 'processing',
+              totalRecords: 0, // Unknown until WebSocket update
+              processedRecords: 0,
+              importedRecords: 0,
+              skippedRecords: 0,
+              errorRecords: 0,
+              currentPage: 0,
+              totalPages: 0,
+              message: progressPercent > 0
+                ? `Import in progress (${progressPercent}% complete)... Waiting for detailed progress.`
+                : 'Import in progress... Waiting for progress update.',
+            });
+            // Mark connection as success since we have an active import
+            setConnectionStatus('success');
+            break;
+          }
+        } catch {
+          // Ignore errors - server might not have queue available
+        }
+      }
+    };
+
+    void checkActiveImports();
+  }, [plexServers.length]); // Only re-run when server count changes
 
   // Listen for import progress via WebSocket
   useEffect(() => {
@@ -1328,6 +1375,7 @@ function ImportSettings() {
       setImportProgress(progress);
       if (progress.status === 'complete' || progress.status === 'error') {
         setIsImporting(false);
+        setActiveJobId(null);
       }
     };
 
@@ -1392,10 +1440,15 @@ function ImportSettings() {
     });
 
     try {
-      await api.import.tautulli.start(selectedServerId);
+      const result = await api.import.tautulli.start(selectedServerId);
+      // Save jobId if returned (when using queue)
+      if (result.jobId) {
+        setActiveJobId(result.jobId);
+      }
       // Progress updates come via WebSocket
     } catch (err) {
       setIsImporting(false);
+      setActiveJobId(null);
       setImportProgress({
         status: 'error',
         totalRecords: 0,
