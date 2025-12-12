@@ -12,6 +12,7 @@ import {
 import { db } from '../db/client.js';
 import { violations, rules, serverUsers, sessions, servers } from '../db/schema.js';
 import { hasServerAccess } from '../utils/serverFiltering.js';
+import { getTrustScorePenalty } from '../jobs/poller/violations.js';
 
 export const violationRoutes: FastifyPluginAsync = async (app) => {
   /**
@@ -678,10 +679,12 @@ export const violationRoutes: FastifyPluginAsync = async (app) => {
         return reply.forbidden('Only server owners can dismiss violations');
       }
 
-      // Check violation exists and get server info for access check
+      // Check violation exists and get info needed for trust score restoration
       const violationRows = await db
         .select({
           id: violations.id,
+          severity: violations.severity,
+          serverUserId: violations.serverUserId,
           serverId: serverUsers.serverId,
         })
         .from(violations)
@@ -699,8 +702,23 @@ export const violationRoutes: FastifyPluginAsync = async (app) => {
         return reply.forbidden('You do not have access to this violation');
       }
 
-      // Delete violation
-      await db.delete(violations).where(eq(violations.id, id));
+      // Calculate trust penalty to restore
+      const trustPenalty = getTrustScorePenalty(violation.severity);
+
+      // Delete violation and restore trust score atomically
+      await db.transaction(async (tx) => {
+        // Delete the violation
+        await tx.delete(violations).where(eq(violations.id, id));
+
+        // Restore trust score (capped at 100)
+        await tx
+          .update(serverUsers)
+          .set({
+            trustScore: sql`LEAST(100, ${serverUsers.trustScore} + ${trustPenalty})`,
+            updatedAt: new Date(),
+          })
+          .where(eq(serverUsers.id, violation.serverUserId));
+      });
 
       return { success: true };
     }

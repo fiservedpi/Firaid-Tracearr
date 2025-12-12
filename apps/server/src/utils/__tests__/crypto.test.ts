@@ -17,10 +17,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // Valid 32-byte key as 64 hex characters
 const VALID_KEY = 'a'.repeat(64);
 
-// Sample encrypted token (created with the old encrypt function)
-// This is a real encrypted value for testing migration
-const SAMPLE_ENCRYPTED = 'dGVzdC1lbmNyeXB0ZWQtdG9rZW4='; // Base64 but not actually encrypted
-
 describe('crypto', () => {
   const originalEnv = process.env.ENCRYPTION_KEY;
 
@@ -180,25 +176,6 @@ describe('crypto', () => {
 
       expect(result.plainText).toBe(fakeEncrypted);
       expect(result.wasEncrypted).toBe(false);
-    });
-  });
-
-  describe('decrypt (deprecated)', () => {
-    it('should throw when encryption is not initialized', async () => {
-      delete process.env.ENCRYPTION_KEY;
-
-      const { decrypt: dec } = await import('../crypto.js');
-
-      expect(() => dec('somedata')).toThrow();
-    });
-
-    it('should throw on invalid data', async () => {
-      process.env.ENCRYPTION_KEY = VALID_KEY;
-
-      const { initializeEncryption: init, decrypt: dec } = await import('../crypto.js');
-      init();
-
-      expect(() => dec('not-valid-encrypted-data')).toThrow();
     });
   });
 });

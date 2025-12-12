@@ -585,14 +585,30 @@ describe('Violation Routes', () => {
       app = await buildTestApp(ownerUser);
 
       const violationId = randomUUID();
+      const serverUserId = randomUUID();
       const serverId = ownerUser.serverIds[0];
 
-      // Violation exists check with serverUsers join
-      mockDb.select.mockReturnValue(createViolationExistsCheckMock([{ id: violationId, serverId }]));
+      // Violation exists check with serverUsers join - now includes severity and serverUserId
+      mockDb.select.mockReturnValue(createViolationExistsCheckMock([{
+        id: violationId,
+        severity: 'warning',
+        serverUserId,
+        serverId,
+      }]));
 
-      // Delete
-      mockDb.delete.mockReturnValue({
-        where: vi.fn().mockResolvedValue(undefined),
+      // Mock transaction for delete + trust score restore
+      mockDb.transaction = vi.fn().mockImplementation(async (callback: (tx: any) => Promise<void>) => {
+        const txMock = {
+          delete: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+          update: vi.fn().mockReturnValue({
+            set: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue(undefined),
+            }),
+          }),
+        };
+        return callback(txMock);
       });
 
       const response = await app.inject({
@@ -603,6 +619,53 @@ describe('Violation Routes', () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.success).toBe(true);
+    });
+
+    it('should restore trust score when deleting violation', async () => {
+      const ownerUser = createOwnerUser();
+      app = await buildTestApp(ownerUser);
+
+      const violationId = randomUUID();
+      const serverUserId = randomUUID();
+      const serverId = ownerUser.serverIds[0];
+
+      // Test with high severity (penalty: 20)
+      mockDb.select.mockReturnValue(createViolationExistsCheckMock([{
+        id: violationId,
+        severity: 'high',
+        serverUserId,
+        serverId,
+      }]));
+
+      // Track transaction calls
+      const deleteMock = vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      });
+      const updateMock = vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      });
+
+      mockDb.transaction = vi.fn().mockImplementation(async (callback: (tx: any) => Promise<void>) => {
+        const txMock = {
+          delete: deleteMock,
+          update: updateMock,
+        };
+        return callback(txMock);
+      });
+
+      const response = await app.inject({
+        method: 'DELETE',
+        url: `/violations/${violationId}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      // Verify transaction was called
+      expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+      // Verify delete and update were called in transaction
+      expect(deleteMock).toHaveBeenCalled();
+      expect(updateMock).toHaveBeenCalled();
     });
 
     it('should reject delete for non-owner', async () => {

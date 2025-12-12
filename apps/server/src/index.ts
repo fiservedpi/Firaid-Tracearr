@@ -46,7 +46,7 @@ import { mobileRoutes } from './routes/mobile.js';
 import { notificationPreferencesRoutes } from './routes/notificationPreferences.js';
 import { channelRoutingRoutes } from './routes/channelRouting.js';
 import { getPollerSettings, getNetworkSettings } from './routes/settings.js';
-import { initializeEncryption, isEncryptionInitialized, migrateToken, looksEncrypted } from './utils/crypto.js';
+import { initializeEncryption, migrateToken, looksEncrypted } from './utils/crypto.js';
 import { geoipService } from './services/geoip.js';
 import { createCacheService, createPubSubService } from './services/cache.js';
 import { initializePoller, startPoller, stopPoller } from './jobs/poller/index.js';
