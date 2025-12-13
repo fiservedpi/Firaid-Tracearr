@@ -20,6 +20,7 @@ import { db } from '../db/client.js';
 import { sessions, serverUsers, servers } from '../db/schema.js';
 import { filterByServerAccess, hasServerAccess } from '../utils/serverFiltering.js';
 import { terminateSession } from '../services/termination.js';
+import { getCacheService } from '../services/cache.js';
 
 export const sessionRoutes: FastifyPluginAsync = async (app) => {
   /**
@@ -292,18 +293,12 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
         return reply.forbidden('You do not have access to this server');
       }
 
-      // Get active sessions from Redis cache
-      const cached = await app.redis.get(REDIS_KEYS.ACTIVE_SESSIONS);
+      // Get active sessions from atomic SET-based cache
+      const cacheService = getCacheService();
+      let activeSessions: ActiveSession[] = [];
 
-      if (!cached) {
-        return { data: [] };
-      }
-
-      let activeSessions: ActiveSession[];
-      try {
-        activeSessions = JSON.parse(cached) as ActiveSession[];
-      } catch {
-        return { data: [] };
+      if (cacheService) {
+        activeSessions = await cacheService.getAllActiveSessions();
       }
 
       // Filter by specific server if requested
