@@ -402,10 +402,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Use prefix parameter for reliable tag prefixing
+          flavor: |
+            prefix=supervised-,onlatest=true
           tags: |
-            type=semver,pattern=supervised-{{version}}
-            type=raw,value=supervised,enable=${{ needs.check-release-type.outputs.prerelease == 'false' }}
-            type=raw,value=supervised-next,enable=${{ needs.check-release-type.outputs.prerelease == 'true' }}
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ needs.check-release-type.outputs.prerelease == 'false' }},prefix=supervised-
+            type=raw,value=next,enable=${{ needs.check-release-type.outputs.prerelease == 'true' }},prefix=supervised-
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
