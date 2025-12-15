@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NavLink, Routes, Route } from 'react-router';
 import { QRCodeSVG } from 'qrcode.react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
@@ -42,6 +43,8 @@ import {
   Plus,
   Clock,
   KeyRound,
+  Upload,
+  FileJson,
 } from 'lucide-react';
 import { MediaServerIcon } from '@/components/icons/MediaServerIcon';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -53,7 +56,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { PlexServerSelector } from '@/components/auth/PlexServerSelector';
 import { NotificationRoutingMatrix } from '@/components/settings/NotificationRoutingMatrix';
-import type { Server, Settings as SettingsType, TautulliImportProgress, MobileSession, MobileQRPayload } from '@tracearr/shared';
+import type { Server, Settings as SettingsType, TautulliImportProgress, JellystatImportProgress, MobileSession, MobileQRPayload } from '@tracearr/shared';
 import {
   useSettings,
   useUpdateSettings,
@@ -1464,22 +1467,33 @@ function ImportSettings() {
   const updateSettings = useUpdateSettings();
   const { socket } = useSocket();
 
+  // Tautulli state
   const [tautulliUrl, setTautulliUrl] = useState('');
   const [tautulliApiKey, setTautulliApiKey] = useState('');
-  const [selectedServerId, setSelectedServerId] = useState<string>('');
+  const [selectedPlexServerId, setSelectedPlexServerId] = useState<string>('');
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [connectionMessage, setConnectionMessage] = useState('');
-  const [importProgress, setImportProgress] = useState<TautulliImportProgress | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
-  const [_activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [tautulliProgress, setTautulliProgress] = useState<TautulliImportProgress | null>(null);
+  const [isTautulliImporting, setIsTautulliImporting] = useState(false);
+  const [_tautulliActiveJobId, setTautulliActiveJobId] = useState<string | null>(null);
+
+  // Jellystat state
+  const [selectedJellyfinServerId, setSelectedJellyfinServerId] = useState<string>('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [enrichMedia, setEnrichMedia] = useState(true);
+  const [jellystatProgress, setJellystatProgress] = useState<JellystatImportProgress | null>(null);
+  const [isJellystatImporting, setIsJellystatImporting] = useState(false);
+  const [_jellystatActiveJobId, setJellystatActiveJobId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle both array and wrapped response formats
   const servers = Array.isArray(serversData)
     ? serversData
     : (serversData as unknown as { data?: Server[] })?.data ?? [];
 
-  // Only show Plex servers (Tautulli is Plex-only)
+  // Split servers by type
   const plexServers = servers.filter((s) => s.type === 'plex');
+  const jellyfinEmbyServers = servers.filter((s) => s.type === 'jellyfin' || s.type === 'emby');
 
   // Initialize form with saved settings
   useEffect(() => {
@@ -1493,7 +1507,7 @@ function ImportSettings() {
     }
   }, [settings]);
 
-  // Check for active import on mount for each Plex server
+  // Check for active Tautulli import on mount
   useEffect(() => {
     if (plexServers.length === 0) return;
 
@@ -1502,16 +1516,14 @@ function ImportSettings() {
         try {
           const result = await api.import.tautulli.getActive(server.id);
           if (result.active && result.jobId) {
-            setSelectedServerId(server.id);
-            setActiveJobId(result.jobId);
-            setIsImporting(true);
+            setSelectedPlexServerId(server.id);
+            setTautulliActiveJobId(result.jobId);
+            setIsTautulliImporting(true);
 
-            // BullMQ stores progress as percentage (0-100)
-            // We'll get detailed progress from WebSocket events
             const progressPercent = typeof result.progress === 'number' ? result.progress : 0;
-            setImportProgress({
+            setTautulliProgress({
               status: 'processing',
-              totalRecords: 0, // Unknown until WebSocket update
+              totalRecords: 0,
               processedRecords: 0,
               importedRecords: 0,
               skippedRecords: 0,
@@ -1522,34 +1534,92 @@ function ImportSettings() {
                 ? `Import in progress (${progressPercent}% complete)... Waiting for detailed progress.`
                 : 'Import in progress... Waiting for progress update.',
             });
-            // Mark connection as success since we have an active import
             setConnectionStatus('success');
             break;
           }
         } catch {
-          // Ignore errors - server might not have queue available
+          // Ignore errors
         }
       }
     };
 
     void checkActiveImports();
-  }, [plexServers.length]); // Only re-run when server count changes
+  }, [plexServers.length]);
 
-  // Listen for import progress via WebSocket
+  // Check for active Jellystat import on mount
   useEffect(() => {
-    if (!socket) return;
+    if (jellyfinEmbyServers.length === 0) return;
 
-    const handleProgress = (progress: TautulliImportProgress) => {
-      setImportProgress(progress);
-      if (progress.status === 'complete' || progress.status === 'error') {
-        setIsImporting(false);
-        setActiveJobId(null);
+    const checkActiveJellystatImports = async () => {
+      for (const server of jellyfinEmbyServers) {
+        try {
+          const result = await api.import.jellystat.getActive(server.id);
+          if (result.active && result.jobId) {
+            setSelectedJellyfinServerId(server.id);
+            setJellystatActiveJobId(result.jobId);
+            setIsJellystatImporting(true);
+
+            const progressPercent = typeof result.progress === 'number' ? result.progress : 0;
+            setJellystatProgress({
+              status: 'processing',
+              totalRecords: 0,
+              processedRecords: 0,
+              importedRecords: 0,
+              skippedRecords: 0,
+              errorRecords: 0,
+              enrichedRecords: 0,
+              message: progressPercent > 0
+                ? `Import in progress (${progressPercent}% complete)... Waiting for detailed progress.`
+                : 'Import in progress... Waiting for progress update.',
+            });
+            break;
+          }
+        } catch {
+          // Ignore errors
+        }
       }
     };
 
-    socket.on('import:progress', handleProgress);
+    void checkActiveJellystatImports();
+  }, [jellyfinEmbyServers.length]);
+
+  // Listen for Tautulli import progress via WebSocket
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleTautulliProgress = (progress: TautulliImportProgress) => {
+      setTautulliProgress(progress);
+      if (progress.status === 'complete' || progress.status === 'error') {
+        setIsTautulliImporting(false);
+        setTautulliActiveJobId(null);
+      }
+    };
+
+    socket.on('import:progress', handleTautulliProgress);
     return () => {
-      socket.off('import:progress', handleProgress);
+      socket.off('import:progress', handleTautulliProgress);
+    };
+  }, [socket]);
+
+  // Listen for Jellystat import progress via WebSocket
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleJellystatProgress = (progress: JellystatImportProgress) => {
+      setJellystatProgress(progress);
+      if (progress.status === 'complete' || progress.status === 'error') {
+        setIsJellystatImporting(false);
+        setJellystatActiveJobId(null);
+        setSelectedFile(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      }
+    };
+
+    socket.on('import:jellystat:progress', handleJellystatProgress);
+    return () => {
+      socket.off('import:jellystat:progress', handleJellystatProgress);
     };
   }, [socket]);
 
@@ -1577,7 +1647,6 @@ function ImportSettings() {
         setConnectionMessage(
           `Connected! Found ${result.users ?? 0} users and ${result.historyRecords ?? 0} history records.`
         );
-        // Save settings on successful connection
         handleSaveSettings();
       } else {
         setConnectionStatus('error');
@@ -1589,13 +1658,11 @@ function ImportSettings() {
     }
   };
 
-  const handleStartImport = async () => {
-    if (!selectedServerId) {
-      return;
-    }
+  const handleStartTautulliImport = async () => {
+    if (!selectedPlexServerId) return;
 
-    setIsImporting(true);
-    setImportProgress({
+    setIsTautulliImporting(true);
+    setTautulliProgress({
       status: 'fetching',
       totalRecords: 0,
       processedRecords: 0,
@@ -1608,16 +1675,14 @@ function ImportSettings() {
     });
 
     try {
-      const result = await api.import.tautulli.start(selectedServerId);
-      // Save jobId if returned (when using queue)
+      const result = await api.import.tautulli.start(selectedPlexServerId);
       if (result.jobId) {
-        setActiveJobId(result.jobId);
+        setTautulliActiveJobId(result.jobId);
       }
-      // Progress updates come via WebSocket
     } catch (err) {
-      setIsImporting(false);
-      setActiveJobId(null);
-      setImportProgress({
+      setIsTautulliImporting(false);
+      setTautulliActiveJobId(null);
+      setTautulliProgress({
         status: 'error',
         totalRecords: 0,
         processedRecords: 0,
@@ -1626,6 +1691,64 @@ function ImportSettings() {
         errorRecords: 0,
         currentPage: 0,
         totalPages: 0,
+        message: err instanceof Error ? err.message : 'Import failed',
+      });
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.name.endsWith('.json')) {
+        setJellystatProgress({
+          status: 'error',
+          totalRecords: 0,
+          processedRecords: 0,
+          importedRecords: 0,
+          skippedRecords: 0,
+          errorRecords: 0,
+          enrichedRecords: 0,
+          message: 'Please select a JSON file',
+        });
+        return;
+      }
+      setSelectedFile(file);
+      setJellystatProgress(null);
+    }
+  };
+
+  const handleStartJellystatImport = async () => {
+    if (!selectedJellyfinServerId || !selectedFile) return;
+
+    setIsJellystatImporting(true);
+    setJellystatProgress({
+      status: 'processing',
+      totalRecords: 0,
+      processedRecords: 0,
+      importedRecords: 0,
+      skippedRecords: 0,
+      errorRecords: 0,
+      enrichedRecords: 0,
+      message: 'Uploading backup file...',
+    });
+
+    try {
+      const result = await api.import.jellystat.start(selectedJellyfinServerId, selectedFile, enrichMedia);
+      if (result.jobId) {
+        setJellystatActiveJobId(result.jobId);
+      }
+    } catch (err) {
+      setIsJellystatImporting(false);
+      setJellystatActiveJobId(null);
+      setJellystatProgress({
+        status: 'error',
+        totalRecords: 0,
+        processedRecords: 0,
+        importedRecords: 0,
+        skippedRecords: 0,
+        errorRecords: 0,
+        enrichedRecords: 0,
         message: err instanceof Error ? err.message : 'Import failed',
       });
     }
@@ -1646,107 +1769,108 @@ function ImportSettings() {
     );
   }
 
+  const hasPlexServers = plexServers.length > 0;
+  const hasJellyfinEmbyServers = jellyfinEmbyServers.length > 0;
+
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5" />
-            Tautulli Import
-          </CardTitle>
-          <CardDescription>
-            Import historical watch data from Tautulli into Tracearr
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="tautulliUrl">Tautulli URL</Label>
-              <Input
-                id="tautulliUrl"
-                placeholder="http://localhost:8181"
-                value={tautulliUrl}
-                onChange={(e) => { setTautulliUrl(e.target.value); }}
-              />
-              <p className="text-xs text-muted-foreground">
-                The URL where Tautulli is accessible (include port if needed)
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="tautulliApiKey">API Key</Label>
-              <Input
-                id="tautulliApiKey"
-                type="password"
-                placeholder="Your Tautulli API key"
-                value={tautulliApiKey}
-                onChange={(e) => { setTautulliApiKey(e.target.value); }}
-              />
-              <p className="text-xs text-muted-foreground">
-                Find this in Tautulli Settings → Web Interface → API Key
-              </p>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Button
-                onClick={handleTestConnection}
-                disabled={connectionStatus === 'testing' || !tautulliUrl || !tautulliApiKey}
-              >
-                {connectionStatus === 'testing' ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Testing...
-                  </>
-                ) : (
-                  'Test Connection'
-                )}
-              </Button>
-
-              {connectionStatus === 'success' && (
-                <div className="flex items-center gap-2 text-sm text-green-600">
-                  <CheckCircle2 className="h-4 w-4" />
-                  {connectionMessage}
+      {/* Tautulli Import - Only shown if there are Plex servers */}
+      {hasPlexServers && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Download className="h-5 w-5" />
+                Tautulli Import (Plex)
+              </CardTitle>
+              <CardDescription>
+                Import historical watch data from Tautulli into Tracearr for your Plex servers
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="tautulliUrl">Tautulli URL</Label>
+                  <Input
+                    id="tautulliUrl"
+                    placeholder="http://localhost:8181"
+                    value={tautulliUrl}
+                    onChange={(e) => { setTautulliUrl(e.target.value); }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The URL where Tautulli is accessible (include port if needed)
+                  </p>
                 </div>
-              )}
 
-              {connectionStatus === 'error' && (
-                <div className="flex items-center gap-2 text-sm text-destructive">
-                  <XCircle className="h-4 w-4" />
-                  {connectionMessage}
+                <div className="space-y-2">
+                  <Label htmlFor="tautulliApiKey">API Key</Label>
+                  <Input
+                    id="tautulliApiKey"
+                    type="password"
+                    placeholder="Your Tautulli API key"
+                    value={tautulliApiKey}
+                    onChange={(e) => { setTautulliApiKey(e.target.value); }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Find this in Tautulli Settings → Web Interface → API Key
+                  </p>
                 </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {connectionStatus === 'success' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Import History</CardTitle>
-            <CardDescription>
-              Select a Plex server to import Tautulli history into
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {plexServers.length === 0 ? (
-              <div className="rounded-lg bg-muted/50 p-4">
-                <p className="text-sm text-muted-foreground">
-                  No Plex servers connected. Add a Plex server first to import Tautulli data.
-                </p>
+                <div className="flex items-center gap-4">
+                  <Button
+                    onClick={handleTestConnection}
+                    disabled={connectionStatus === 'testing' || !tautulliUrl || !tautulliApiKey}
+                  >
+                    {connectionStatus === 'testing' ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Testing...
+                      </>
+                    ) : (
+                      'Test Connection'
+                    )}
+                  </Button>
+
+                  {connectionStatus === 'success' && (
+                    <div className="flex items-center gap-2 text-sm text-green-600">
+                      <CheckCircle2 className="h-4 w-4" />
+                      {connectionMessage}
+                    </div>
+                  )}
+
+                  {connectionStatus === 'error' && (
+                    <div className="flex items-center gap-2 text-sm text-destructive">
+                      <XCircle className="h-4 w-4" />
+                      {connectionMessage}
+                    </div>
+                  )}
+                </div>
               </div>
-            ) : (
-              <>
+            </CardContent>
+          </Card>
+
+          {connectionStatus === 'success' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Import Tautulli History</CardTitle>
+                <CardDescription>
+                  Select a Plex server to import Tautulli history into
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
                 <div className="space-y-2">
                   <Label>Target Server</Label>
-                  <Select value={selectedServerId} onValueChange={setSelectedServerId}>
+                  <Select value={selectedPlexServerId} onValueChange={setSelectedPlexServerId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select a Plex server" />
                     </SelectTrigger>
                     <SelectContent>
                       {plexServers.map((server) => (
                         <SelectItem key={server.id} value={server.id}>
-                          {server.name}
+                          <div className="flex items-center gap-2">
+                            <MediaServerIcon type="plex" className="h-4 w-4" />
+                            {server.name}
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1758,10 +1882,10 @@ function ImportSettings() {
 
                 <div className="space-y-4">
                   <Button
-                    onClick={handleStartImport}
-                    disabled={!selectedServerId || isImporting}
+                    onClick={handleStartTautulliImport}
+                    disabled={!selectedPlexServerId || isTautulliImporting}
                   >
-                    {isImporting ? (
+                    {isTautulliImporting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Importing...
@@ -1774,36 +1898,36 @@ function ImportSettings() {
                     )}
                   </Button>
 
-                  {importProgress && (
+                  {tautulliProgress && (
                     <div className="space-y-3 rounded-lg border p-4">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium">
-                          {importProgress.status === 'complete' ? 'Import Complete' :
-                           importProgress.status === 'error' ? 'Import Failed' :
+                          {tautulliProgress.status === 'complete' ? 'Import Complete' :
+                           tautulliProgress.status === 'error' ? 'Import Failed' :
                            'Importing...'}
                         </span>
-                        {importProgress.status === 'complete' && (
+                        {tautulliProgress.status === 'complete' && (
                           <CheckCircle2 className="h-5 w-5 text-green-600" />
                         )}
-                        {importProgress.status === 'error' && (
+                        {tautulliProgress.status === 'error' && (
                           <XCircle className="h-5 w-5 text-destructive" />
                         )}
-                        {(importProgress.status === 'fetching' || importProgress.status === 'processing') && (
+                        {(tautulliProgress.status === 'fetching' || tautulliProgress.status === 'processing') && (
                           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                         )}
                       </div>
 
-                      <p className="text-sm text-muted-foreground">{importProgress.message}</p>
+                      <p className="text-sm text-muted-foreground">{tautulliProgress.message}</p>
 
-                      {importProgress.totalRecords > 0 && (
+                      {tautulliProgress.totalRecords > 0 && (
                         <>
                           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                             <div
                               className="h-full bg-primary transition-all"
                               style={{
-                                width: importProgress.status === 'complete'
+                                width: tautulliProgress.status === 'complete'
                                   ? '100%'
-                                  : `${Math.min(100, Math.round((importProgress.processedRecords / importProgress.totalRecords) * 100))}%`,
+                                  : `${Math.min(100, Math.round((tautulliProgress.processedRecords / tautulliProgress.totalRecords) * 100))}%`,
                               }}
                             />
                           </div>
@@ -1812,32 +1936,32 @@ function ImportSettings() {
                             <div>
                               <span className="text-muted-foreground">Processed:</span>{' '}
                               <span className="font-medium">
-                                {importProgress.processedRecords} / {importProgress.totalRecords}
+                                {tautulliProgress.processedRecords} / {tautulliProgress.totalRecords}
                               </span>
                             </div>
                             <div>
                               <span className="text-muted-foreground">Page:</span>{' '}
                               <span className="font-medium">
-                                {importProgress.currentPage} / {importProgress.totalPages}
+                                {tautulliProgress.currentPage} / {tautulliProgress.totalPages}
                               </span>
                             </div>
                             <div>
                               <span className="text-muted-foreground">Imported:</span>{' '}
                               <span className="font-medium text-green-600">
-                                {importProgress.importedRecords}
+                                {tautulliProgress.importedRecords}
                               </span>
                             </div>
                             <div>
                               <span className="text-muted-foreground">Skipped:</span>{' '}
                               <span className="font-medium text-yellow-600">
-                                {importProgress.skippedRecords}
+                                {tautulliProgress.skippedRecords}
                               </span>
                             </div>
-                            {importProgress.errorRecords > 0 && (
+                            {tautulliProgress.errorRecords > 0 && (
                               <div>
                                 <span className="text-muted-foreground">Errors:</span>{' '}
                                 <span className="font-medium text-destructive">
-                                  {importProgress.errorRecords}
+                                  {tautulliProgress.errorRecords}
                                 </span>
                               </div>
                             )}
@@ -1852,11 +1976,214 @@ function ImportSettings() {
                   <p className="text-sm text-muted-foreground">
                     <strong>Note:</strong> The import will match Tautulli users to existing Tracearr users
                     by their Plex user ID. Duplicate sessions are automatically detected and skipped.
-                    This process may take several minutes depending on your history size.
                   </p>
                 </div>
-              </>
-            )}
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* Jellystat Import - Only shown if there are Jellyfin/Emby servers */}
+      {hasJellyfinEmbyServers && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileJson className="h-5 w-5" />
+              Jellystat Import (Jellyfin/Emby)
+            </CardTitle>
+            <CardDescription>
+              Import historical watch data from a Jellystat backup file into Tracearr
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Target Server</Label>
+                <Select value={selectedJellyfinServerId} onValueChange={setSelectedJellyfinServerId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a Jellyfin or Emby server" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {jellyfinEmbyServers.map((server) => (
+                      <SelectItem key={server.id} value={server.id}>
+                        <div className="flex items-center gap-2">
+                          <MediaServerIcon type={server.type} className="h-4 w-4" />
+                          {server.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Sessions will be imported and matched to users from this server
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="jellystatFile">Jellystat Backup File</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="jellystatFile"
+                    type="file"
+                    accept=".json"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="cursor-pointer"
+                  />
+                </div>
+                {selectedFile && (
+                  <p className="text-xs text-muted-foreground">
+                    Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Export your backup from Jellystat Settings → Backup → Full Backup
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="enrichMedia"
+                  checked={enrichMedia}
+                  onCheckedChange={(checked: boolean | 'indeterminate') => setEnrichMedia(checked === true)}
+                />
+                <Label htmlFor="enrichMedia" className="text-sm font-normal cursor-pointer">
+                  Enrich with media metadata (recommended)
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground -mt-2 ml-6">
+                Fetches additional details like season/episode numbers and artwork from your media server.
+                This may slow down the import but provides better data quality.
+              </p>
+
+              <div className="space-y-4">
+                <Button
+                  onClick={handleStartJellystatImport}
+                  disabled={!selectedJellyfinServerId || !selectedFile || isJellystatImporting}
+                >
+                  {isJellystatImporting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Start Import
+                    </>
+                  )}
+                </Button>
+
+                {jellystatProgress && (
+                  <div className="space-y-3 rounded-lg border p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">
+                        {jellystatProgress.status === 'complete' ? 'Import Complete' :
+                         jellystatProgress.status === 'error' ? 'Import Failed' :
+                         'Importing...'}
+                      </span>
+                      {jellystatProgress.status === 'complete' && (
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      )}
+                      {jellystatProgress.status === 'error' && (
+                        <XCircle className="h-5 w-5 text-destructive" />
+                      )}
+                      {jellystatProgress.status === 'processing' && (
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      )}
+                    </div>
+
+                    <p className="text-sm text-muted-foreground">{jellystatProgress.message}</p>
+
+                    {jellystatProgress.totalRecords > 0 && (
+                      <>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full bg-primary transition-all"
+                            style={{
+                              width: jellystatProgress.status === 'complete'
+                                ? '100%'
+                                : `${Math.min(100, Math.round((jellystatProgress.processedRecords / jellystatProgress.totalRecords) * 100))}%`,
+                            }}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Processed:</span>{' '}
+                            <span className="font-medium">
+                              {jellystatProgress.processedRecords} / {jellystatProgress.totalRecords}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Imported:</span>{' '}
+                            <span className="font-medium text-green-600">
+                              {jellystatProgress.importedRecords}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Skipped:</span>{' '}
+                            <span className="font-medium text-yellow-600">
+                              {jellystatProgress.skippedRecords}
+                            </span>
+                          </div>
+                          {jellystatProgress.enrichedRecords !== undefined && jellystatProgress.enrichedRecords > 0 && (
+                            <div>
+                              <span className="text-muted-foreground">Enriched:</span>{' '}
+                              <span className="font-medium text-blue-600">
+                                {jellystatProgress.enrichedRecords}
+                              </span>
+                            </div>
+                          )}
+                          {jellystatProgress.errorRecords > 0 && (
+                            <div>
+                              <span className="text-muted-foreground">Errors:</span>{' '}
+                              <span className="font-medium text-destructive">
+                                {jellystatProgress.errorRecords}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-lg bg-muted/50 p-4">
+                <p className="text-sm text-muted-foreground">
+                  <strong>Note:</strong> The import will match Jellystat users to existing Tracearr users
+                  by their Jellyfin/Emby user ID. Duplicate sessions are automatically detected and skipped.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No servers message */}
+      {!hasPlexServers && !hasJellyfinEmbyServers && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Download className="h-5 w-5" />
+              Import History
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-8">
+              <ServerIcon className="h-8 w-8 text-muted-foreground" />
+              <div className="text-center">
+                <p className="font-medium">No Servers Connected</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Add a media server first to import historical watch data.
+                </p>
+              </div>
+              <Button variant="outline" asChild>
+                <a href="/settings/servers">Add Server</a>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
