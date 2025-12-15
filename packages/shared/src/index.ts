@@ -62,6 +62,9 @@ export type {
   // Tautulli import
   TautulliImportProgress,
   TautulliImportResult,
+  // Jellystat import
+  JellystatImportProgress,
+  JellystatImportResult,
   // WebSocket
   ServerToClientEvents,
   ClientToServerEvents,
@@ -141,6 +144,13 @@ export {
   updateSettingsSchema,
   // Tautulli import
   tautulliImportSchema,
+  // Jellystat import
+  jellystatPlayStateSchema,
+  jellystatTranscodingInfoSchema,
+  jellystatPlaybackActivitySchema,
+  jellystatBackupSchema,
+  jellystatImportBodySchema,
+  importJobStatusSchema,
 } from './schemas.js';
 
 // Schema input type exports
@@ -159,6 +169,13 @@ export type {
   LocationStatsQueryInput,
   UpdateSettingsInput,
   TautulliImportInput,
+  // Jellystat types
+  JellystatPlayState,
+  JellystatTranscodingInfo,
+  JellystatPlaybackActivity,
+  JellystatBackup,
+  JellystatImportBody,
+  ImportJobStatus,
 } from './schemas.js';
 
 // Constant exports

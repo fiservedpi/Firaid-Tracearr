@@ -55,6 +55,7 @@ export const WS_EVENTS = {
   VIOLATION_NEW: 'violation:new',
   STATS_UPDATED: 'stats:updated',
   IMPORT_PROGRESS: 'import:progress',
+  IMPORT_JELLYSTAT_PROGRESS: 'import:jellystat:progress',
   SUBSCRIBE_SESSIONS: 'subscribe:sessions',
   UNSUBSCRIBE_SESSIONS: 'unsubscribe:sessions',
 } as const;
