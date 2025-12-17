@@ -11,7 +11,7 @@
  * 4. Continued Session Threshold - 60s configurable
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   checkWatchCompletion,
   shouldGroupWithPreviousSession,
