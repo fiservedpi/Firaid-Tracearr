@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // eslint-disable-next-line @typescript-eslint/no-deprecated
-import { getDateRange, resolveDateRange, buildDateRangeFilter, resetCachedState, hasAggregates, hasHyperLogLog } from '../utils.js';
+import { getDateRange, resolveDateRange, buildDateRangeFilter, resetCachedState, hasAggregates, hasHyperLogLog, getStartOfDayInTimezone } from '../utils.js';
 
 // Mock the database module
 vi.mock('../../../db/client.js', () => ({
@@ -338,5 +338,91 @@ describe('hasHyperLogLog', () => {
     await hasHyperLogLog();
     // Should only call db.execute once due to caching
     expect(db.execute).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('getStartOfDayInTimezone', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should return midnight UTC for UTC timezone', () => {
+    // Set time to 2024-06-15 14:30:00 UTC
+    vi.setSystemTime(new Date('2024-06-15T14:30:00Z'));
+    const result = getStartOfDayInTimezone('UTC');
+    expect(result).toEqual(new Date('2024-06-15T00:00:00Z'));
+  });
+
+  it('should return UTC time for midnight in America/Los_Angeles (PST, UTC-8)', () => {
+    // Set time to 2024-01-15 10:00 PST (18:00 UTC)
+    // Winter time so PST is UTC-8
+    vi.setSystemTime(new Date('2024-01-15T18:00:00Z'));
+    const result = getStartOfDayInTimezone('America/Los_Angeles');
+    // Midnight PST = 08:00 UTC
+    expect(result).toEqual(new Date('2024-01-15T08:00:00Z'));
+  });
+
+  it('should return UTC time for midnight in America/Los_Angeles (PDT, UTC-7)', () => {
+    // Set time to 2024-06-15 10:00 PDT (17:00 UTC)
+    // Summer time so PDT is UTC-7
+    vi.setSystemTime(new Date('2024-06-15T17:00:00Z'));
+    const result = getStartOfDayInTimezone('America/Los_Angeles');
+    // Midnight PDT = 07:00 UTC
+    expect(result).toEqual(new Date('2024-06-15T07:00:00Z'));
+  });
+
+  it('should return UTC time for midnight in Europe/London (BST, UTC+1)', () => {
+    // Set time to 2024-06-15 14:00 BST (13:00 UTC)
+    // Summer time so BST is UTC+1
+    vi.setSystemTime(new Date('2024-06-15T13:00:00Z'));
+    const result = getStartOfDayInTimezone('Europe/London');
+    // Midnight BST = 23:00 UTC (previous day)
+    expect(result).toEqual(new Date('2024-06-14T23:00:00Z'));
+  });
+
+  it('should return UTC time for midnight in Europe/London (GMT, UTC+0)', () => {
+    // Set time to 2024-01-15 14:00 GMT (14:00 UTC)
+    // Winter time so GMT is UTC+0
+    vi.setSystemTime(new Date('2024-01-15T14:00:00Z'));
+    const result = getStartOfDayInTimezone('Europe/London');
+    // Midnight GMT = 00:00 UTC
+    expect(result).toEqual(new Date('2024-01-15T00:00:00Z'));
+  });
+
+  it('should return UTC time for midnight in Asia/Tokyo (UTC+9)', () => {
+    // Set time to 2024-06-15 22:00 JST (13:00 UTC)
+    vi.setSystemTime(new Date('2024-06-15T13:00:00Z'));
+    const result = getStartOfDayInTimezone('Asia/Tokyo');
+    // Midnight JST = 15:00 UTC (previous day)
+    expect(result).toEqual(new Date('2024-06-14T15:00:00Z'));
+  });
+
+  it('should handle timezone with 30-minute offset (Asia/Kolkata, UTC+5:30)', () => {
+    // Set time to 2024-06-15 14:30 IST (09:00 UTC)
+    vi.setSystemTime(new Date('2024-06-15T09:00:00Z'));
+    const result = getStartOfDayInTimezone('Asia/Kolkata');
+    // Midnight IST = 18:30 UTC (previous day)
+    expect(result).toEqual(new Date('2024-06-14T18:30:00Z'));
+  });
+
+  it('should handle date boundary crossing correctly', () => {
+    // When it's early morning in UTC, it might still be "yesterday" in western timezones
+    // 2024-06-15 02:00 UTC
+    vi.setSystemTime(new Date('2024-06-15T02:00:00Z'));
+    const result = getStartOfDayInTimezone('America/Los_Angeles');
+    // At 02:00 UTC, it's 19:00 PDT on June 14
+    // So "today" start in LA is June 14 00:00 PDT = June 14 07:00 UTC
+    expect(result).toEqual(new Date('2024-06-14T07:00:00Z'));
+  });
+
+  it('should return a valid Date object', () => {
+    vi.setSystemTime(new Date('2024-06-15T14:30:00Z'));
+    const result = getStartOfDayInTimezone('America/New_York');
+    expect(result).toBeInstanceOf(Date);
+    expect(result.getTime()).not.toBeNaN();
   });
 });

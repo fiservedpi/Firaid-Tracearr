@@ -6,7 +6,7 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { eq, gte, sql, and } from 'drizzle-orm';
-import { REDIS_KEYS, TIME_MS, type DashboardStats, serverIdFilterSchema } from '@tracearr/shared';
+import { REDIS_KEYS, TIME_MS, type DashboardStats, dashboardQuerySchema } from '@tracearr/shared';
 import { db } from '../../db/client.js';
 import { sessions } from '../../db/schema.js';
 import {
@@ -17,6 +17,7 @@ import {
 } from '../../db/prepared.js';
 import { filterByServerAccess, validateServerAccess, buildServerAccessCondition } from '../../utils/serverFiltering.js';
 import { getCacheService } from '../../services/cache.js';
+import { getStartOfDayInTimezone } from './utils.js';
 
 export const dashboardRoutes: FastifyPluginAsync = async (app) => {
   /**
@@ -29,13 +30,15 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     '/dashboard',
     { preHandler: [app.authenticate] },
     async (request, reply) => {
-      const query = serverIdFilterSchema.safeParse(request.query);
+      const query = dashboardQuerySchema.safeParse(request.query);
       if (!query.success) {
         return reply.badRequest('Invalid query parameters');
       }
 
-      const { serverId } = query.data;
+      const { serverId, timezone } = query.data;
       const authUser = request.user;
+      // Default to UTC for backwards compatibility
+      const tz = timezone ?? 'UTC';
 
       // Validate server access if specific server requested
       if (serverId) {
@@ -45,10 +48,10 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         }
       }
 
-      // Build cache key (server-specific or global)
+      // Build cache key (includes server and timezone for correct caching)
       const cacheKey = serverId
-        ? `${REDIS_KEYS.DASHBOARD_STATS}:${serverId}`
-        : REDIS_KEYS.DASHBOARD_STATS;
+        ? `${REDIS_KEYS.DASHBOARD_STATS}:${serverId}:${tz}`
+        : `${REDIS_KEYS.DASHBOARD_STATS}:${tz}`;
 
       // Try cache first
       const cached = await app.redis.get(cacheKey);
@@ -78,9 +81,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         }
       }
 
-      // Get today's plays and watch time
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
+      // Get today's plays and watch time (using user's timezone for "today")
+      const todayStart = getStartOfDayInTimezone(tz);
       const last24h = new Date(Date.now() - TIME_MS.DAY);
 
       // If no serverId and user is owner, use prepared statements for performance

@@ -95,6 +95,46 @@ export function getDateRange(period: 'day' | 'week' | 'month' | 'year'): Date {
 }
 
 // ============================================================================
+// Timezone Utilities
+// ============================================================================
+
+/**
+ * Get the start of "today" in a specific timezone, returned as a UTC Date.
+ *
+ * For example, if it's 2024-01-15 10:00 in America/Los_Angeles (UTC-8),
+ * this returns 2024-01-15 08:00 UTC (which is midnight PST).
+ *
+ * @param tz - IANA timezone identifier (e.g., 'America/Los_Angeles')
+ * @returns Date representing midnight in the specified timezone
+ */
+export function getStartOfDayInTimezone(tz: string): Date {
+  const now = new Date();
+
+  // Get current date parts in target timezone
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(now);
+  const hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10);
+  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10);
+  const second = parseInt(parts.find((p) => p.type === 'second')?.value ?? '0', 10);
+
+  // Calculate milliseconds since midnight in the target timezone
+  const msSinceMidnight = (hour * 3600 + minute * 60 + second) * 1000;
+
+  // Subtract that from now to get midnight in UTC
+  return new Date(now.getTime() - msSinceMidnight);
+}
+
+// ============================================================================
 // New Date Range API (supports 'all' and 'custom' periods)
 // ============================================================================
 

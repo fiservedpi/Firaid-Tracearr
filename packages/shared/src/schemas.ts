@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod';
+import { isValidTimezone } from './constants.js';
 
 // Common schemas
 export const uuidSchema = z.uuid();
@@ -192,12 +193,28 @@ export const serverIdFilterSchema = z.object({
   serverId: uuidSchema.optional(),
 });
 
+// IANA timezone string validation (e.g., 'America/Los_Angeles', 'Europe/London')
+// Uses shared isValidTimezone helper which validates via Intl API
+export const timezoneSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .refine(isValidTimezone, { message: 'Invalid IANA timezone identifier' })
+  .optional();
+
+// Dashboard query schema with timezone support
+export const dashboardQuerySchema = z.object({
+  serverId: uuidSchema.optional(),
+  timezone: timezoneSchema,
+});
+
 export const statsQuerySchema = z
   .object({
     period: z.enum(['day', 'week', 'month', 'year', 'all', 'custom']).default('week'),
     startDate: z.iso.datetime().optional(),
     endDate: z.iso.datetime().optional(),
     serverId: uuidSchema.optional(),
+    timezone: timezoneSchema,
   })
   .refine(
     (data) => {
@@ -295,6 +312,7 @@ export type CreateRuleInput = z.infer<typeof createRuleSchema>;
 export type UpdateRuleInput = z.infer<typeof updateRuleSchema>;
 export type ViolationQueryInput = z.infer<typeof violationQuerySchema>;
 export type ServerIdFilterInput = z.infer<typeof serverIdFilterSchema>;
+export type DashboardQueryInput = z.infer<typeof dashboardQuerySchema>;
 export type StatsQueryInput = z.infer<typeof statsQuerySchema>;
 export type LocationStatsQueryInput = z.infer<typeof locationStatsQuerySchema>;
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

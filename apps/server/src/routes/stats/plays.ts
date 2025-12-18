@@ -49,9 +49,11 @@ export const playsRoutes: FastifyPluginAsync = async (app) => {
         return reply.badRequest('Invalid query parameters');
       }
 
-      const { period, startDate, endDate, serverId } = query.data;
+      const { period, startDate, endDate, serverId, timezone } = query.data;
       const authUser = request.user;
       const dateRange = resolveDateRange(period, startDate, endDate);
+      // Default to UTC for backwards compatibility
+      const tz = timezone ?? 'UTC';
 
       // Validate server access if specific server requested
       if (serverId) {
@@ -68,16 +70,17 @@ export const playsRoutes: FastifyPluginAsync = async (app) => {
         ? sql`WHERE started_at >= ${dateRange.start}`
         : sql`WHERE true`;
 
+      // Convert to user's timezone before truncating to day
       const result = await db.execute(sql`
         SELECT
-          date_trunc('day', started_at)::date::text as date,
+          date_trunc('day', started_at AT TIME ZONE ${tz})::date::text as date,
           count(DISTINCT COALESCE(reference_id, id))::int as count
         FROM sessions
         ${baseWhere}
         ${period === 'custom' ? sql`AND started_at < ${dateRange.end}` : sql``}
         ${serverFilter}
-        GROUP BY date_trunc('day', started_at)
-        ORDER BY date_trunc('day', started_at)
+        GROUP BY date_trunc('day', started_at AT TIME ZONE ${tz})
+        ORDER BY date_trunc('day', started_at AT TIME ZONE ${tz})
       `);
 
       return { data: result.rows as { date: string; count: number }[] };
@@ -96,9 +99,11 @@ export const playsRoutes: FastifyPluginAsync = async (app) => {
         return reply.badRequest('Invalid query parameters');
       }
 
-      const { period, startDate, endDate, serverId } = query.data;
+      const { period, startDate, endDate, serverId, timezone } = query.data;
       const authUser = request.user;
       const dateRange = resolveDateRange(period, startDate, endDate);
+      // Default to UTC for backwards compatibility
+      const tz = timezone ?? 'UTC';
 
       // Validate server access if specific server requested
       if (serverId) {
@@ -116,15 +121,16 @@ export const playsRoutes: FastifyPluginAsync = async (app) => {
         ? sql`WHERE started_at >= ${dateRange.start}`
         : sql`WHERE true`;
 
+      // Convert to user's timezone before extracting day of week
       const result = await db.execute(sql`
         SELECT
-          EXTRACT(DOW FROM started_at)::int as day,
+          EXTRACT(DOW FROM started_at AT TIME ZONE ${tz})::int as day,
           COUNT(DISTINCT COALESCE(reference_id, id))::int as count
         FROM sessions
         ${baseWhere}
         ${period === 'custom' ? sql`AND started_at < ${dateRange.end}` : sql``}
         ${serverFilter}
-        GROUP BY EXTRACT(DOW FROM started_at)
+        GROUP BY EXTRACT(DOW FROM started_at AT TIME ZONE ${tz})
         ORDER BY day
       `);
 
@@ -154,9 +160,11 @@ export const playsRoutes: FastifyPluginAsync = async (app) => {
         return reply.badRequest('Invalid query parameters');
       }
 
-      const { period, startDate, endDate, serverId } = query.data;
+      const { period, startDate, endDate, serverId, timezone } = query.data;
       const authUser = request.user;
       const dateRange = resolveDateRange(period, startDate, endDate);
+      // Default to UTC for backwards compatibility
+      const tz = timezone ?? 'UTC';
 
       // Validate server access if specific server requested
       if (serverId) {
@@ -173,15 +181,16 @@ export const playsRoutes: FastifyPluginAsync = async (app) => {
         ? sql`WHERE started_at >= ${dateRange.start}`
         : sql`WHERE true`;
 
+      // Convert to user's timezone before extracting hour
       const result = await db.execute(sql`
         SELECT
-          EXTRACT(HOUR FROM started_at)::int as hour,
+          EXTRACT(HOUR FROM started_at AT TIME ZONE ${tz})::int as hour,
           COUNT(DISTINCT COALESCE(reference_id, id))::int as count
         FROM sessions
         ${baseWhere}
         ${period === 'custom' ? sql`AND started_at < ${dateRange.end}` : sql``}
         ${serverFilter}
-        GROUP BY EXTRACT(HOUR FROM started_at)
+        GROUP BY EXTRACT(HOUR FROM started_at AT TIME ZONE ${tz})
         ORDER BY hour
       `);
 

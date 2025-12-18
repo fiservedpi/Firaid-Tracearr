@@ -313,3 +313,36 @@ export const SESSION_LIMITS = {
   // Stale session sweep interval - how often to check for stale sessions (1 minute)
   STALE_SWEEP_INTERVAL_MS: 60 * 1000,
 } as const;
+
+// ============================================================================
+// Timezone Utilities
+// ============================================================================
+
+/**
+ * Get the client's IANA timezone identifier.
+ * Works in both browser and React Native environments.
+ *
+ * @returns IANA timezone string (e.g., 'America/Los_Angeles') or 'UTC' as fallback
+ */
+export function getClientTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
+ * Validate an IANA timezone identifier.
+ *
+ * @param tz - Timezone string to validate
+ * @returns true if valid IANA timezone, false otherwise
+ */
+export function isValidTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}

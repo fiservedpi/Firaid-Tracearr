@@ -34,14 +34,19 @@ import type {
 
 // Re-export shared types needed by frontend components
 export type { PlexDiscoveredServer, PlexDiscoveredConnection, PlexAvailableServersResponse };
-import { API_BASE_PATH } from '@tracearr/shared';
+import { API_BASE_PATH, getClientTimezone } from '@tracearr/shared';
 
 // Stats time range parameters
 export interface StatsTimeRange {
   period: 'day' | 'week' | 'month' | 'year' | 'all' | 'custom';
   startDate?: string; // ISO date string
   endDate?: string; // ISO date string
+  timezone?: string; // IANA timezone (e.g., 'America/Los_Angeles')
 }
+
+// Re-export shared timezone helper for backwards compatibility
+// Uses Intl API which works in both browser and React Native
+export const getBrowserTimezone = getClientTimezone;
 
 // Types for Plex server selection during signup (from check-pin endpoint)
 export interface PlexServerConnection {
@@ -540,6 +545,9 @@ class ApiClient {
     if (timeRange?.startDate) params.set('startDate', timeRange.startDate);
     if (timeRange?.endDate) params.set('endDate', timeRange.endDate);
     if (serverId) params.set('serverId', serverId);
+    // Always include timezone for consistent chart display
+    // Use provided timezone or fall back to browser's timezone
+    params.set('timezone', timeRange?.timezone ?? getBrowserTimezone());
     return params;
   }
 
@@ -547,8 +555,9 @@ class ApiClient {
     dashboard: (serverId?: string) => {
       const params = new URLSearchParams();
       if (serverId) params.set('serverId', serverId);
-      const query = params.toString();
-      return this.request<DashboardStats>(`/stats/dashboard${query ? `?${query}` : ''}`);
+      // Include timezone so "today" is calculated in user's local timezone
+      params.set('timezone', getBrowserTimezone());
+      return this.request<DashboardStats>(`/stats/dashboard?${params.toString()}`);
     },
     plays: async (timeRange?: StatsTimeRange, serverId?: string) => {
       const params = this.buildStatsParams(timeRange ?? { period: 'week' }, serverId);

@@ -1086,8 +1086,8 @@ export async function sweepStaleSessions(): Promise<number> {
     }
 
     // Invalidate dashboard stats after force-stopping sessions
-    if (redisClient) {
-      await redisClient.del(REDIS_KEYS.DASHBOARD_STATS);
+    if (cacheService) {
+      await cacheService.invalidateDashboardStatsCache();
     }
 
     return staleSessions.length;

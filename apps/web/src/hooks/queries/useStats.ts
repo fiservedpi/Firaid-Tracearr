@@ -1,13 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import '@tracearr/shared';
-import { api, type StatsTimeRange } from '@/lib/api';
+import { api, type StatsTimeRange, getBrowserTimezone } from '@/lib/api';
 
 // Re-export for backwards compatibility and convenience
 export type { StatsTimeRange };
 
 export function useDashboardStats(serverId?: string | null) {
+  // Include timezone in cache key since "today" varies by timezone
+  const timezone = getBrowserTimezone();
   return useQuery({
-    queryKey: ['stats', 'dashboard', serverId],
+    queryKey: ['stats', 'dashboard', serverId, timezone],
     queryFn: () => api.stats.dashboard(serverId ?? undefined),
     staleTime: 1000 * 30, // 30 seconds
     refetchInterval: 1000 * 60, // 1 minute

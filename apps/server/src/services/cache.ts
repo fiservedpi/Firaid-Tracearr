@@ -28,6 +28,7 @@ export interface CacheService {
   // Dashboard stats
   getDashboardStats(): Promise<DashboardStats | null>;
   setDashboardStats(stats: DashboardStats): Promise<void>;
+  invalidateDashboardStatsCache(): Promise<void>;
 
   // Session by ID
   getSessionById(id: string): Promise<ActiveSession | null>;
@@ -52,6 +53,16 @@ export interface CacheService {
 }
 
 export function createCacheService(redis: Redis): CacheService {
+  // Helper to invalidate all dashboard stats cache keys (timezone-specific)
+  // Dashboard route uses keys like tracearr:stats:dashboard:UTC or tracearr:stats:dashboard:{serverId}:{tz}
+  const invalidateDashboardStats = async (): Promise<void> => {
+    const pattern = `${REDIS_KEYS.DASHBOARD_STATS}:*`;
+    const keys = await redis.keys(pattern);
+    if (keys.length > 0) {
+      await redis.del(...keys);
+    }
+  };
+
   const service: CacheService = {
     // Active sessions
     async getActiveSessions(): Promise<ActiveSession[] | null> {
@@ -71,7 +82,7 @@ export function createCacheService(redis: Redis): CacheService {
         JSON.stringify(sessions)
       );
       // Invalidate dashboard stats so they reflect the new session count
-      await redis.del(REDIS_KEYS.DASHBOARD_STATS);
+      await invalidateDashboardStats();
     },
 
     // Atomic SET-based operations for active sessions
@@ -87,12 +98,12 @@ export function createCacheService(redis: Redis): CacheService {
         CACHE_TTL.ACTIVE_SESSIONS,
         JSON.stringify(session)
       );
-      // Invalidate dashboard stats atomically with session add
-      pipeline.del(REDIS_KEYS.DASHBOARD_STATS);
       const results = await pipeline.exec();
       if (!results || results.some(([err]) => err !== null)) {
         console.error('[Cache] addActiveSession pipeline failed:', results);
       }
+      // Invalidate dashboard stats (uses pattern matching for timezone-specific keys)
+      await invalidateDashboardStats();
     },
 
     async removeActiveSession(sessionId: string): Promise<void> {
@@ -101,12 +112,12 @@ export function createCacheService(redis: Redis): CacheService {
       pipeline.srem(REDIS_KEYS.ACTIVE_SESSION_IDS, sessionId);
       // Remove session data
       pipeline.del(REDIS_KEYS.SESSION_BY_ID(sessionId));
-      // Invalidate dashboard stats atomically with session remove
-      pipeline.del(REDIS_KEYS.DASHBOARD_STATS);
       const results = await pipeline.exec();
       if (!results || results.some(([err]) => err !== null)) {
         console.error('[Cache] removeActiveSession pipeline failed:', results);
       }
+      // Invalidate dashboard stats (uses pattern matching for timezone-specific keys)
+      await invalidateDashboardStats();
     },
 
     async getActiveSessionIds(): Promise<string[]> {
@@ -192,12 +203,12 @@ export function createCacheService(redis: Redis): CacheService {
         }
       }
 
-      // Invalidate dashboard stats atomically
-      pipeline.del(REDIS_KEYS.DASHBOARD_STATS);
       const results = await pipeline.exec();
       if (!results || results.some(([err]) => err !== null)) {
         console.error('[Cache] syncActiveSessions pipeline failed:', results);
       }
+      // Invalidate dashboard stats (uses pattern matching for timezone-specific keys)
+      await invalidateDashboardStats();
     },
 
     async incrementalSyncActiveSessions(
@@ -240,12 +251,12 @@ export function createCacheService(redis: Redis): CacheService {
         pipeline.expire(REDIS_KEYS.ACTIVE_SESSION_IDS, CACHE_TTL.ACTIVE_SESSIONS);
       }
 
-      // Invalidate dashboard stats atomically
-      pipeline.del(REDIS_KEYS.DASHBOARD_STATS);
       const results = await pipeline.exec();
       if (!results || results.some(([err]) => err !== null)) {
         console.error('[Cache] incrementalSyncActiveSessions pipeline failed:', results);
       }
+      // Invalidate dashboard stats (uses pattern matching for timezone-specific keys)
+      await invalidateDashboardStats();
     },
 
     // Dashboard stats
@@ -265,6 +276,10 @@ export function createCacheService(redis: Redis): CacheService {
         CACHE_TTL.DASHBOARD_STATS,
         JSON.stringify(stats)
       );
+    },
+
+    async invalidateDashboardStatsCache(): Promise<void> {
+      await invalidateDashboardStats();
     },
 
     // Session by ID

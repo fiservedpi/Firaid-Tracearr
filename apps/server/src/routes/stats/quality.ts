@@ -230,9 +230,11 @@ export const qualityRoutes: FastifyPluginAsync = async (app) => {
         return reply.badRequest('Invalid query parameters');
       }
 
-      const { period, startDate, endDate, serverId } = query.data;
+      const { period, startDate, endDate, serverId, timezone } = query.data;
       const authUser = request.user;
       const dateRange = resolveDateRange(period, startDate, endDate);
+      // Default to UTC for backwards compatibility
+      const tz = timezone ?? 'UTC';
 
       // Validate server access if specific server requested
       if (serverId) {
@@ -251,6 +253,7 @@ export const qualityRoutes: FastifyPluginAsync = async (app) => {
 
       // Event-based calculation with proper boundary handling
       // Uses TimescaleDB-optimized time-based filtering on hypertable
+      // Convert to user's timezone before truncating to hour for grouping
       const result = await db.execute(sql`
         WITH events AS (
           -- Sessions already running at startDate (started before, not yet stopped)
@@ -304,12 +307,12 @@ export const qualityRoutes: FastifyPluginAsync = async (app) => {
           WINDOW w AS (ORDER BY event_time ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
         )
         SELECT
-          date_trunc('hour', event_time)::text AS hour,
+          date_trunc('hour', event_time AT TIME ZONE ${tz})::text AS hour,
           COALESCE(MAX(concurrent), 0)::int AS total,
           COALESCE(MAX(direct_concurrent), 0)::int AS direct,
           COALESCE(MAX(transcode_concurrent), 0)::int AS transcode
         FROM running_counts
-        GROUP BY date_trunc('hour', event_time)
+        GROUP BY date_trunc('hour', event_time AT TIME ZONE ${tz})
         ORDER BY hour
       `);
 

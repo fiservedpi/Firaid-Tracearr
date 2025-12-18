@@ -143,6 +143,8 @@ export {
   violationIdParamSchema,
   // Stats
   serverIdFilterSchema,
+  dashboardQuerySchema,
+  timezoneSchema,
   statsQuerySchema,
   locationStatsQuerySchema,
   // Settings
@@ -164,6 +166,7 @@ export type {
   UpdateRuleInput,
   ViolationQueryInput,
   ServerIdFilterInput,
+  DashboardQueryInput,
   StatsQueryInput,
   LocationStatsQueryInput,
   UpdateSettingsInput,
@@ -204,6 +207,9 @@ export {
   getSpeedUnit,
   toMetricDistance,
   fromMetricDistance,
+  // Timezone utilities
+  getClientTimezone,
+  isValidTimezone,
 } from './constants.js';
 
 // Role helper exports
